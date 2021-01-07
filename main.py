@@ -1,5 +1,3 @@
-import sys
-
 from koopman_probabilistic import *
 import numpy as np
 import matplotlib.pyplot as plt
@@ -13,8 +11,8 @@ def koopman_main():
     # x = np.expand_dims(x,-1).astype(np.float32)
 
     mu_vec = 5 * np.sin(2 * np.pi / 24 * np.arange(5000))
-    sigma_vec = np.sin(2 * np.pi / 24 * np.arange(5000) + 1.51) + 1.5
-    rng = np.random.default_rng(562)
+    sigma_vec = np.sin(2 * np.pi / 24 * np.arange(5000) + 1.5) + 1.5
+    rng = np.random.default_rng(425)
     x = rng.normal(mu_vec, sigma_vec).astype(np.float32)
     x = np.expand_dims(x, 1)
 

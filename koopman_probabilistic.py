@@ -5,7 +5,6 @@
           Alex Mallen (atmallen@uw.edu)
 """
 
-
 import torch
 
 from torch import nn
@@ -60,7 +59,6 @@ class KoopmanProb(nn.Module):
         else:
             self.omegas_mu = torch.linspace(0.01, 0.5, self.num_freqs_mu, device=self.device)
 
-        # Initial guesses for frequencies
         if self.num_freqs_sigma == 1:
             self.omegas_sigma = torch.tensor([0.2], device=self.device)
         else:
@@ -112,13 +110,21 @@ class KoopmanProb(nn.Module):
             o_mu = torch.unsqueeze(self.omegas_mu, 0)
             o_sigma = torch.unsqueeze(self.omegas_sigma, 0)
             ts = torch.unsqueeze(ts, -1).type(torch.get_default_dtype())
-            
+
             ts2 = torch.arange(self.sample_num,
                                dtype=torch.get_default_dtype(),
                                device=self.device)
-            
-            ts2 = ts2*2*np.pi/self.sample_num
-            ts2 = ts2*ts/ts  # essentially reshape
+
+            ts2 = ts2 * 2 * np.pi / self.sample_num
+            ts2 = ts2 * ts / ts  # essentially reshape
+
+            # TODO: clean this up to just use ts2
+            ts3 = torch.arange(self.sample_num,
+                               dtype=torch.get_default_dtype(),
+                               device=self.device)
+
+            ts3 = ts3 * 2 * np.pi / self.sample_num
+            ts3 = ts3 * ts / ts  # essentially reshape
             
             ys_mu = []
             ys_sigma = []
@@ -128,7 +134,7 @@ class KoopmanProb(nn.Module):
                 wt_sigma = ts * o_sigma
                 
                 wt_mu[:, i] = ts2[:, iw]
-                wt_sigma[:, i] = ts2[:, iw].detach().clone()
+                wt_sigma[:, i] = ts3[:, iw]
 
                 y_mu = torch.cat([torch.cos(wt_mu), torch.sin(wt_mu)], dim=1)
                 y_sigma = torch.cat([torch.cos(wt_sigma), torch.sin(wt_sigma)], dim=1)
@@ -202,7 +208,7 @@ class KoopmanProb(nn.Module):
             if idxs[j]>1 and np.all(np.abs(2*np.pi/omegas_detached - 1/omegas[idxs[j]]) > 1):
                 found = True
                 if verbose:
-                    print('Setting ', i, 'to', 1/omegas[idxs[j]])
+                    print('Setting', parameter, i, 'to', 1/omegas[idxs[j]])
                 omegas_actual[i] = torch.from_numpy(np.array([omegas[idxs[j]]]))
                 omegas_actual[i] *= 2*np.pi
             
@@ -249,8 +255,8 @@ class KoopmanProb(nn.Module):
             
             xt_t = torch.tensor(xt[ts.cpu().numpy(), :], device=self.device)
             
-            wt_mu = ts_ * omega_mu
-            wt_sigma = ts_ * omega_sigma
+            wt_mu = ts_ * o_mu
+            wt_sigma = ts_ * o_sigma
             
             w_mu = torch.cat([torch.cos(wt_mu), torch.sin(wt_mu)], -1)
             w_sigma = torch.cat([torch.cos(wt_sigma), torch.sin(wt_sigma)], -1)
@@ -274,7 +280,7 @@ class KoopmanProb(nn.Module):
 
         return np.mean(losses)
 
-    def fit(self, xt, iterations = 10, interval = 5, cutoff = np.inf, verbose=False):
+    def fit(self, xt, iterations=10, interval=5, cutoff=np.inf, verbose=False):
         """
         Given a dataset, this function alternatingly optimizes omega and 
         parameters of f. Specifically, the algorithm performs interval many
@@ -308,11 +314,11 @@ class KoopmanProb(nn.Module):
                     self.fft(xt, k, "sigma", verbose=verbose)
             
             if verbose:
-                print('Iteration ',i)
+                print('Iteration ', i)
 
             l = self.sgd(xt, verbose=verbose)
             if verbose:
-                print('Loss: ',l)
+                print('Loss: ', l)
 
     def predict(self, T):
         """
