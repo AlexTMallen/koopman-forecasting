@@ -240,8 +240,8 @@ class KoopmanProb(nn.Module):
         omega_mu = nn.Parameter(self.omegas_mu)
         omega_sigma = nn.Parameter(self.omegas_sigma)
 
-        opt = optim.SGD(self.model_obj.parameters(), lr=1e-3)
-        opt_omega = optim.SGD([omega_mu, omega_sigma], lr=1e-5/T)
+        opt = optim.Adam(self.model_obj.parameters(), lr=1e-3)
+        opt_omega = optim.Adam([omega_mu, omega_sigma], lr=1e-5/T)
 
         T = xt.shape[0]
         t = torch.arange(T, device=self.device)
