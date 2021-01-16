@@ -12,13 +12,10 @@ from torch import optim
 
 import numpy as np
 
-# !/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-@author: Henning Lange (helange@uw.edu)
-"""
-
 import torch
+
+# TODO remove
+import matplotlib.pyplot as plt
 
 from torch import nn
 from torch import optim
@@ -50,13 +47,19 @@ class KoopmanProb(nn.Module):
             Example: cpu, cuda:0, or list of GPUs for multi-GPU usage, i.e. ['cuda:0', 'cuda:1']
             default = 'cpu'
 
+    seed: The seed to set for pyTorch
 
     '''
 
-    def __init__(self, model_obj, sample_num=12, **kwargs):
+    def __init__(self, model_obj, sample_num=12, seed=None, **kwargs):
 
         super(KoopmanProb, self).__init__()
         self.num_freqs = model_obj.num_freqs
+
+        if seed is not None:
+            torch.set_deterministic(True)
+            torch.manual_seed(seed)
+            np.random.seed(seed)
 
         if 'device' in kwargs:
             self.device = kwargs['device']
@@ -175,6 +178,7 @@ class KoopmanProb(nn.Module):
         '''
 
         errs = self.sample_error(xt, i)
+
         ft_errs = np.fft.fft(errs)
 
         E_ft = np.zeros(xt.shape[0] * self.sample_num).astype(np.complex64)
@@ -185,27 +189,46 @@ class KoopmanProb(nn.Module):
         # ensuring that result is real
         E_ft = np.concatenate([E_ft, np.conj(np.flip(E_ft))])[:-1]
 
-        E = np.fft.ifft(E_ft)
-        omegas = np.linspace(0, 1, len(E))
+        E = np.fft.ifft(E_ft)[:len(E_ft) // 2]
+        print("max imaginary,", max(E.imag))
+        omegas = np.linspace(0, 0.5, len(E))
 
-        idxs = np.argsort(E[:len(E_ft) // 2])
+        # unknown phase problem adjustments
+        plateau = np.median(E)
+        adj_E = abs(E - plateau)
+        idxs = np.argsort(adj_E)[::-1]
+        print("plateau:", plateau)
+        print("best omegas:", omegas[idxs[:5]])
 
         omegas_actual = self.omegas.cpu().detach().numpy()
         omegas_actual[i] = -1
         found = False
-
         j = 0
         while not found:
             # The if statement avoids non-unique entries in omega and that the
             # frequencies are 0 (should be handle by bias term)
-            if idxs[j] > 1 and np.all(np.abs(2 * np.pi / omegas_actual - 1 / omegas[idxs[j]]) > 1):
+            # "nonzero AND has a period that's more than 1 different from those that have already been discovered"
+            if idxs[j] >= 1 and np.all(np.abs(2 * np.pi / omegas_actual - 1 / omegas[idxs[j]]) > 1):
                 found = True
                 if verbose:
-                    print('Setting ', i, 'to', 1 / omegas[idxs[j]])
+                    print('Setting', i, 'to', 1 / omegas[idxs[j]])
+                if 23 < 1 / omegas[idxs[j]] < 25:
+                    sdfd = 13242
                 self.omegas[i] = torch.from_numpy(np.array([omegas[idxs[j]]]))
                 self.omegas[i] *= 2 * np.pi
 
             j += 1
+
+
+        # TODO remove plotting
+        # plt.plot(errs[-1])
+        # plt.show()
+
+        plt.plot(omegas, E)
+        plt.title(f"omega {i}")
+        plt.xlabel("frequency (periods per time)")
+        plt.ylabel("loss")
+        plt.show()
 
         return E, E_ft
 
@@ -255,6 +278,9 @@ class KoopmanProb(nn.Module):
             k = torch.cat([torch.cos(wt), torch.sin(wt)], -1)
             loss = torch.mean(self.model_obj(k, xt_t))
 
+            if loss > 10000:
+                print("loss at:", i, loss)
+
             opt.zero_grad()
             opt_omega.zero_grad()
 
@@ -266,7 +292,7 @@ class KoopmanProb(nn.Module):
             losses.append(loss.cpu().detach().numpy())
 
         if verbose:
-            print('Setting to', 2 * np.pi / omega)
+            print('Setting omegas to', 2 * np.pi / omega)
 
         self.omegas = omega.data
 
