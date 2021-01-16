@@ -47,8 +47,11 @@ class KoopmanProb(nn.Module):
             Example: cpu, cuda:0, or list of GPUs for multi-GPU usage, i.e. ['cuda:0', 'cuda:1']
             default = 'cpu'
 
-    seed: The seed to set for pyTorch
+    seed: The seed to set for pyTorch and numpy--WARNING: does not seem to make results reproducible
 
+    min_periods: the minimum number of periods you think should appear in the training data set
+            (helps narrow down omega).
+            default = 2
     '''
 
     def __init__(self, model_obj, sample_num=12, seed=None, **kwargs):
@@ -82,10 +85,10 @@ class KoopmanProb(nn.Module):
 
         self.parallel_batch_size = kwargs['parallel_batch_size'] if 'parallel_batch_size' in kwargs else 1000
         self.batch_size = kwargs['batch_size'] if 'batch_size' in kwargs else 32
+        self.min_periods = kwargs['min_periods'] if 'min_periods' in kwargs else 2
 
         model_obj = model_obj.to(self.device)
         self.model_obj = nn.DataParallel(model_obj, device_ids=kwargs['device']) if multi_gpu else model_obj
-
         self.sample_num = sample_num
 
     def sample_error(self, xt, i):
@@ -200,15 +203,22 @@ class KoopmanProb(nn.Module):
         print("plateau:", plateau)
         print("best omegas:", omegas[idxs[:5]])
 
+        # get the values of omega that have already been used
         omegas_actual = self.omegas.cpu().detach().numpy()
-        omegas_actual[i] = -1
+        if i < self.model_obj.num_freqs_mu:
+            omegas_actual = omegas_actual[:self.model_obj.num_freqs_mu]
+            omegas_actual[i] = -1
+        else:
+            omegas_actual = omegas_actual[self.model_obj.num_freqs_mu:]
+            omegas_actual[i - self.model_obj.num_freqs_mu] = -1
+
         found = False
         j = 0
         while not found:
             # The if statement avoids non-unique entries in omega and that the
-            # frequencies are 0 (should be handle by bias term)
+            # frequencies are 0 (should be handled by bias term)
             # "nonzero AND has a period that's more than 1 different from those that have already been discovered"
-            if idxs[j] >= 1 and np.all(np.abs(2 * np.pi / omegas_actual - 1 / omegas[idxs[j]]) > 1):
+            if idxs[j] >= self.min_periods and np.all(np.abs(2 * np.pi / omegas_actual - 1 / omegas[idxs[j]]) > 1):
                 found = True
                 if verbose:
                     print('Setting', i, 'to', 1 / omegas[idxs[j]])
@@ -224,7 +234,7 @@ class KoopmanProb(nn.Module):
         # plt.plot(errs[-1])
         # plt.show()
 
-        plt.plot(omegas, E)
+        plt.plot(omegas[self.min_periods:], adj_E[self.min_periods:])
         plt.title(f"omega {i}")
         plt.xlabel("frequency (periods per time)")
         plt.ylabel("loss")
@@ -292,7 +302,7 @@ class KoopmanProb(nn.Module):
             losses.append(loss.cpu().detach().numpy())
 
         if verbose:
-            print('Setting omegas to', 2 * np.pi / omega)
+            print('Setting periods to', 2 * np.pi / omega)
 
         self.omegas = omega.data
 

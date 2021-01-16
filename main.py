@@ -10,7 +10,7 @@ def koopman_main():
     print("SEED:", seed)
 
     mu_vec = 2 * np.sin(2 * np.pi / 24 * np.arange(5000))
-    sigma_vec = 0.5 * np.sin(2 * np.pi / 24 * np.arange(5000) + 1.5) + 1
+    sigma_vec = 3 * np.sin(2 * np.pi / 24 * np.arange(5000) + 1.5) + 3
     rng = np.random.default_rng(seed)
     x = rng.normal(mu_vec, sigma_vec).astype(np.float32)
     x = np.expand_dims(x, 1)
@@ -24,8 +24,8 @@ def koopman_main():
     except IOError or FileNotFoundError as e:
         print(e)
         model = FullyConnectedNLL(x_dim=1, num_freqs_mu=1, num_freqs_sigma=1, n=512)
-        k = KoopmanProb(model, device='cpu', seed=seed, sample_num=24)
-        k.fit(x[:3500], iterations=150, interval=50, verbose=True, cutoff=100)
+        k = KoopmanProb(model, device='cpu', seed=seed, sample_num=24, min_periods=50)
+        k.fit(x[:3500], iterations=150, interval=30, verbose=True, cutoff=100)
         mu_hat, sigma_hat = k.predict(5000)
         np.save(mu_file, mu_hat)
         np.save(sigma_file, sigma_hat)
