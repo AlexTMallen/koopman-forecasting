@@ -4,49 +4,52 @@ import matplotlib.pyplot as plt
 
 
 def koopman_main():
-    seed = np.random.randint(1000)
-    seed = 936
-    np.random.seed(seed)
-    print("SEED:", seed)
+    # seed = np.random.randint(1000)
+    # np.random.seed(seed)
+    # print("SEED:", seed)
 
-    mu_vec = 2 * np.sin(2 * np.pi / 24 * np.arange(5000))
-    sigma_vec = 3 * np.sin(2 * np.pi / 24 * np.arange(5000) + 1.5) + 3
-    rng = np.random.default_rng(seed)
-    x = rng.normal(mu_vec, sigma_vec).astype(np.float32)
-    x = np.expand_dims(x, 1)
+    # mu_vec = 2 * np.sin(2 * np.pi / 24 * np.arange(5000))
+    # sigma_vec = 3 * np.sin(2 * np.pi / 34 * np.arange(5000) + 1.5) + 3
+    # rng = np.random.default_rng(seed)
+    # x = rng.normal(mu_vec, sigma_vec).astype(np.float32)
+    # x = np.expand_dims(x, 1)
+    predict_through = 24000
+    enrgy = np.load("energy_data.npy")
 
-    mu_file = "mu.npy"
-    sigma_file = "sigma.npy"
+    mu_file = "3mu_energy.npy"
+    sigma_file = "3sigma_energy.npy"
+    params_file = "3mu8sigma_params.npy"
     try:
         raise IOError
         mu_hat = np.load(mu_file)
         sigma_hat = np.load(sigma_file)
     except IOError or FileNotFoundError as e:
         print(e)
-        model = FullyConnectedNLL(x_dim=1, num_freqs_mu=1, num_freqs_sigma=1, n=512)
-        k = KoopmanProb(model, device='cpu', seed=seed, sample_num=24, min_periods=50)
-        k.fit(x[:3500], iterations=150, interval=30, verbose=True, cutoff=100)
-        mu_hat, sigma_hat = k.predict(5000)
+        model = FullyConnectedNLL(x_dim=1, num_freqs_mu=5, num_freqs_sigma=5, n=512)
+        k = KoopmanProb(model, device='cpu', sample_num=24, min_periods=2, num_fourier_modes=3)
+        xt = enrgy[:5000]
+        k.find_fourier_omegas(xt)
+        k.fit(xt, iterations=150, interval=20, verbose=True, cutoff=99)  # slice must be at least 1000
+        mu_hat, sigma_hat = k.predict(predict_through)
         np.save(mu_file, mu_hat)
         np.save(sigma_file, sigma_hat)
+        np.save(params_file, np.array(list(k.parameters())))
 
-    print("SEED:", seed)
-    slc = -100
+    # print("SEED:", seed)
+    slc = -2400
     # plt.scatter(np.arange(-slc), x[slc:], label="data")
-    plt.plot(x[slc:], label="data")
-    plt.plot(mu_hat[slc:, 0], label="koopman")
-    plt.plot(mu_hat[slc:, 0] + 2 * sigma_hat[slc:, 0], "--", color="black", label="koopman 95% CI")
-    plt.plot(mu_hat[slc:, 0] - 2 * sigma_hat[slc:, 0], "--", color="black")
-    plt.legend()
-    plt.show()
+    plt.plot(enrgy[:predict_through], label="data")
+    plt.plot(mu_hat, label="koopman")
+    plt.plot(mu_hat + sigma_hat, "--", color="black", label="koopman 68% CI")
+    plt.plot(mu_hat - sigma_hat, "--", color="black")
 
-    plt.plot(mu_vec[slc:], label="real mu")
-    plt.plot(mu_hat[slc:, 0], label="koopman mu")
-    plt.legend()
-    plt.show()
-
-    plt.plot(sigma_vec[slc:], label="real sigma")
-    plt.plot(sigma_hat[slc:, 0], label="koopman sigma")
+    # plt.plot(mu_vec[slc:], label="real mu")
+    # plt.plot(mu_hat[slc:, 0], label="koopman mu")
+    # plt.legend()
+    # plt.show()
+    #
+    # plt.plot(sigma_vec[slc:], label="real sigma")
+    plt.plot(sigma_hat, label="koopman sigma")
     plt.legend()
     plt.show()
 

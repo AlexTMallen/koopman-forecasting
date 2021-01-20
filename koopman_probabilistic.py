@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-@authors: Henning Lange (helange@uw.edu)
-          Alex Mallen (atmallen@uw.edu)
+@authors: Alex Mallen (atmallen@uw.edu)
+Built on code from Henning Lange (helange@uw.edu)
 """
 
 import torch
@@ -50,8 +50,14 @@ class KoopmanProb(nn.Module):
     seed: The seed to set for pyTorch and numpy--WARNING: does not seem to make results reproducible
 
     min_periods: the minimum number of periods you think should appear in the training data set
-            (helps narrow down omega).
-            default = 2
+                 (helps narrow down omega).
+                 default = 2
+
+    num_fourier_modes: the number of frequencies to set using the argmax values of the fourier transform. these are
+                       shared between mu and sigma
+                       condition: num_fourier_modes <= min(num_freqs_mu, num_freqs_sigma)
+                       default = 0
+
     '''
 
     def __init__(self, model_obj, sample_num=12, seed=None, **kwargs):
@@ -75,21 +81,48 @@ class KoopmanProb(nn.Module):
             self.device = 'cpu'
             multi_gpu = False
 
-        # Inital guesses for frequencies
-        if self.num_freqs == 1:
-            self.omegas = torch.tensor([0.2], device=self.device)
-        else:
-            self.omegas = torch.linspace(0.01, 0.5, self.num_freqs, device=self.device)
-
         self.multi_gpu = multi_gpu
 
         self.parallel_batch_size = kwargs['parallel_batch_size'] if 'parallel_batch_size' in kwargs else 1000
+        self.num_fourier_modes = kwargs['num_fourier_modes'] if 'num_fourier_modes' in kwargs else 0
         self.batch_size = kwargs['batch_size'] if 'batch_size' in kwargs else 32
         self.min_periods = kwargs['min_periods'] if 'min_periods' in kwargs else 2
+
+        # Initial guesses for frequencies
+        self.omegas = torch.linspace(0.01, 0.5, self.num_freqs, device=self.device)
 
         model_obj = model_obj.to(self.device)
         self.model_obj = nn.DataParallel(model_obj, device_ids=kwargs['device']) if multi_gpu else model_obj
         self.sample_num = sample_num
+
+    def find_fourier_omegas(self, xt):
+        """
+        computes the fft of the data to "hard-code" self.num_fourier_modes values of omega that
+        will remain constant through optimization
+
+        :param xt: the data to initialize fourier modes with
+        :return: None
+        """
+        if self.num_fourier_modes > 0:
+            xt_ft = np.fft.fft(np.reshape(xt, xt.size))
+            adj_xt_ft = abs(xt_ft) + abs(np.flip(xt_ft))
+            freqs = np.fft.fftfreq(len(xt_ft))
+
+            best_omegas = np.zeros(self.num_fourier_modes)
+            i = 0
+            num_found = 0
+            while num_found < self.num_fourier_modes:
+                # TODO also implement partitions in fft
+                amax = np.argpartition(-adj_xt_ft[:len(xt_ft) // 2], i)[i]  # ith biggest freq
+                if freqs[amax] != 0 and all(abs(1 - best_omegas / freqs[amax]) > 0.1):
+                    best_omegas[num_found] = freqs[amax]
+                    num_found += 1
+                i += 1
+
+            best_omegas = 2 * np.pi * torch.tensor(best_omegas)
+            self.omegas[:self.num_fourier_modes] = best_omegas
+            self.omegas[self.model_obj.num_freqs_mu: self.model_obj.num_freqs_mu + self.num_fourier_modes] = best_omegas
+            print("fourier omegas:", 2 * np.pi / best_omegas)
 
     def sample_error(self, xt, i):
         '''
@@ -193,15 +226,14 @@ class KoopmanProb(nn.Module):
         E_ft = np.concatenate([E_ft, np.conj(np.flip(E_ft))])[:-1]
 
         E = np.fft.ifft(E_ft)[:len(E_ft) // 2]
-        print("max imaginary,", max(E.imag))
         omegas = np.linspace(0, 0.5, len(E))
 
         # unknown phase problem adjustments
         plateau = np.median(E)
         adj_E = abs(E - plateau)
-        idxs = np.argsort(adj_E)[::-1]
-        print("plateau:", plateau)
-        print("best omegas:", omegas[idxs[:5]])
+        # idxs = np.argsort(adj_E)[::-1]
+        # print("plateau:", plateau)
+        # print("best omegas:", omegas[idxs[:5]])
 
         # get the values of omega that have already been used
         omegas_actual = self.omegas.cpu().detach().numpy()
@@ -215,16 +247,17 @@ class KoopmanProb(nn.Module):
         found = False
         j = 0
         while not found:
+
+            amax = np.argpartition(-adj_E, j)[j]  # ith biggest freq
             # The if statement avoids non-unique entries in omega and that the
             # frequencies are 0 (should be handled by bias term)
             # "nonzero AND has a period that's more than 1 different from those that have already been discovered"
-            if idxs[j] >= self.min_periods and np.all(np.abs(2 * np.pi / omegas_actual - 1 / omegas[idxs[j]]) > 1):
+            if amax >= self.min_periods and np.all(np.abs(2 * np.pi / omegas_actual - 1 / omegas[amax]) > 1):
                 found = True
                 if verbose:
-                    print('Setting', i, 'to', 1 / omegas[idxs[j]])
-                if 23 < 1 / omegas[idxs[j]] < 25:
-                    sdfd = 13242
-                self.omegas[i] = torch.from_numpy(np.array([omegas[idxs[j]]]))
+                    print('Setting', i, 'to', 1 / omegas[amax])
+
+                self.omegas[i] = torch.from_numpy(np.array([omegas[amax]]))
                 self.omegas[i] *= 2 * np.pi
 
             j += 1
@@ -234,11 +267,11 @@ class KoopmanProb(nn.Module):
         # plt.plot(errs[-1])
         # plt.show()
 
-        plt.plot(omegas[self.min_periods:], adj_E[self.min_periods:])
-        plt.title(f"omega {i}")
-        plt.xlabel("frequency (periods per time)")
-        plt.ylabel("loss")
-        plt.show()
+        # plt.plot(omegas[self.min_periods:], adj_E[self.min_periods:])
+        # plt.title(f"omega {i}")
+        # plt.xlabel("frequency (periods per time)")
+        # plt.ylabel("loss")
+        # plt.show()
 
         return E, E_ft
 
@@ -338,7 +371,10 @@ class KoopmanProb(nn.Module):
         for i in range(iterations):
 
             if i % interval == 0 and i < cutoff:
-                for k in range(self.num_freqs):
+                # skips the fourier mode frequencies
+                for k in range(self.num_fourier_modes, self.model_obj.num_freqs_mu):
+                    self.fft(xt, k, verbose=verbose)
+                for k in range(self.num_fourier_modes + self.model_obj.num_freqs_mu, self.num_freqs):
                     self.fft(xt, k, verbose=verbose)
 
             if verbose:
@@ -429,12 +465,12 @@ class FullyConnectedNLL(ModelObject):
         self.mask_sigma[2 * num_freqs_mu:] = 1
 
         self.l1_mu = nn.Linear(2 * self.num_freqs, n)
-        self.l2_mu = nn.Linear(n, 32)
-        self.l3_mu = nn.Linear(32, x_dim)
+        self.l2_mu = nn.Linear(n, 64)
+        self.l3_mu = nn.Linear(64, x_dim)
 
         self.l1_sig = nn.Linear(2 * self.num_freqs, n)
-        self.l2_sig = nn.Linear(n, 32)
-        self.l3_sig = nn.Linear(32, x_dim)
+        self.l2_sig = nn.Linear(n, 64)
+        self.l3_sig = nn.Linear(64, x_dim)
 
     def decode(self, w):
         w_mu = w * self.mask_mu
@@ -451,5 +487,13 @@ class FullyConnectedNLL(ModelObject):
 
     def forward(self, w, data):
         y, z = self.decode(w)
+        # l1_reg = torch.nn.L1Loss()(self.parameters())
+        # l1_reg = 0
+        # lamb = 1e-150
+        # for p in self.named_parameters():
+        #     name = p[0]
+        #     data = p[1].data
+        #     if "sig" in name:
+        #         l1_reg += torch.linalg.norm(data, ord=1)
         # negative log likelihood of observing data given gaussians with mu=x and sigma=z
         return torch.mean((data - y)**2 / (2 * z**2) + torch.log(z), dim=-1)
