@@ -3,6 +3,7 @@
 
 # images
 *.png
+*.jpg
 
 # pycharm files
 .idea/*

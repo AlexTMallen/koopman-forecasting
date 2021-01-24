@@ -49,10 +49,6 @@ class KoopmanProb(nn.Module):
 
     seed: The seed to set for pyTorch and numpy--WARNING: does not seem to make results reproducible
 
-    min_periods: the minimum number of periods you think should appear in the training data set
-                 (helps narrow down omega).
-                 default = 2
-
     num_fourier_modes: the number of frequencies to set using the argmax values of the fourier transform. these are
                        shared between mu and sigma
                        condition: num_fourier_modes <= min(num_freqs_mu, num_freqs_sigma)
@@ -86,7 +82,6 @@ class KoopmanProb(nn.Module):
         self.parallel_batch_size = kwargs['parallel_batch_size'] if 'parallel_batch_size' in kwargs else 1000
         self.num_fourier_modes = kwargs['num_fourier_modes'] if 'num_fourier_modes' in kwargs else 0
         self.batch_size = kwargs['batch_size'] if 'batch_size' in kwargs else 32
-        self.min_periods = kwargs['min_periods'] if 'min_periods' in kwargs else 2
 
         # Initial guesses for frequencies
         self.omegas = torch.linspace(0.01, 0.5, self.num_freqs, device=self.device)
@@ -252,7 +247,7 @@ class KoopmanProb(nn.Module):
             # The if statement avoids non-unique entries in omega and that the
             # frequencies are 0 (should be handled by bias term)
             # "nonzero AND has a period that's more than 1 different from those that have already been discovered"
-            if amax >= self.min_periods and np.all(np.abs(2 * np.pi / omegas_actual - 1 / omegas[amax]) > 1):
+            if amax >= 1 and np.all(np.abs(2 * np.pi / omegas_actual - 1 / omegas[amax]) > 1):
                 found = True
                 if verbose:
                     print('Setting', i, 'to', 1 / omegas[amax])
@@ -275,7 +270,7 @@ class KoopmanProb(nn.Module):
 
         return E, E_ft
 
-    def sgd(self, xt, verbose=False):
+    def sgd(self, xt, iteration, verbose=False):
         '''
 
         sgd performs a single epoch of stochastic gradient descent on parameters
@@ -301,8 +296,8 @@ class KoopmanProb(nn.Module):
 
         omega = nn.Parameter(self.omegas)
 
-        opt = optim.SGD(self.model_obj.parameters(), lr=1e-3)
-        opt_omega = optim.SGD([omega], lr=1e-5 / T)
+        opt = optim.SGD(self.model_obj.parameters(), lr=1e-3 * (1 / (1 + np.exp(-(iteration - 15)))), weight_decay=1e-9)
+        opt_omega = optim.SGD([omega], lr=1e-5 / T * (1 / (1 + np.exp(-(iteration - 15)))))
 
         T = xt.shape[0]
         t = torch.arange(T, device=self.device)
@@ -381,7 +376,7 @@ class KoopmanProb(nn.Module):
                 print('Iteration ', i)
                 print(2 * np.pi / self.omegas)
 
-            l = self.sgd(xt, verbose=verbose)
+            l = self.sgd(xt, i, verbose=verbose)
             if verbose:
                 print('Loss: ', l)
 
@@ -487,7 +482,6 @@ class FullyConnectedNLL(ModelObject):
 
     def forward(self, w, data):
         y, z = self.decode(w)
-        # l1_reg = torch.nn.L1Loss()(self.parameters())
         # l1_reg = 0
         # lamb = 1e-150
         # for p in self.named_parameters():
