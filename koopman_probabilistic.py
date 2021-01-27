@@ -148,6 +148,9 @@ class KoopmanProb(nn.Module):
         errors = []
 
         batch = self.parallel_batch_size
+        
+        if t.shape[0] < batch:
+            batch = t.shape[0]
 
         for j in range(t.shape[0] // batch):
 
@@ -270,7 +273,7 @@ class KoopmanProb(nn.Module):
 
         return E, E_ft
 
-    def sgd(self, xt, iteration, verbose=False):
+    def sgd(self, xt, iteration, weight_decay=0, verbose=False):
         '''
 
         sgd performs a single epoch of stochastic gradient descent on parameters
@@ -280,7 +283,7 @@ class KoopmanProb(nn.Module):
         ----------
         xt : TYPE numpy.array
             Temporal data whose first dimension is time.
-        verbose : TYPE boolean, optional
+        verbose : TYPE boolean, optionaly
             The default is False.
 
         Returns
@@ -296,7 +299,7 @@ class KoopmanProb(nn.Module):
 
         omega = nn.Parameter(self.omegas)
 
-        opt = optim.SGD(self.model_obj.parameters(), lr=1e-3 * (1 / (1 + np.exp(-(iteration - 15)))), weight_decay=1e-9)
+        opt = optim.Adam(self.model_obj.parameters(), lr=1e-3 * (1 / (1 + np.exp(-(iteration - 15)))), betas=(0.99, 0.9999), eps=1e-5, weight_decay=weight_decay)
         opt_omega = optim.SGD([omega], lr=1e-5 / T * (1 / (1 + np.exp(-(iteration - 15)))))
 
         T = xt.shape[0]
@@ -304,8 +307,12 @@ class KoopmanProb(nn.Module):
 
         losses = []
 
-        for i in range(len(t) // batch_size):
-            ts = t[i * batch_size:(i + 1) * batch_size]
+       
+        for i in range(len(t) // batch_size + 1):
+            if  i == len(t) // batch_size:  # remainder data with batch smaller than batch_size
+                ts = t[-(len(t) % batch_size):]
+            else:
+                ts = t[i * batch_size:(i + 1) * batch_size]
             o = torch.unsqueeze(omega, 0)
             ts_ = torch.unsqueeze(ts, -1).type(torch.get_default_dtype()) + 1
 
@@ -336,7 +343,7 @@ class KoopmanProb(nn.Module):
 
         return np.mean(losses)
 
-    def fit(self, xt, iterations=10, interval=5, cutoff=np.inf, verbose=False):
+    def fit(self, xt, iterations=10, interval=5, cutoff=np.inf, weight_decay=0, verbose=False):
         '''
         Given a dataset, this function alternatingly optimizes omega and
         parameters of f. Specifically, the algorithm performs interval many
@@ -376,7 +383,7 @@ class KoopmanProb(nn.Module):
                 print('Iteration ', i)
                 print(2 * np.pi / self.omegas)
 
-            l = self.sgd(xt, i, verbose=verbose)
+            l = self.sgd(xt, i, weight_decay=weight_decay, verbose=verbose)
             if verbose:
                 print('Loss: ', l)
 
