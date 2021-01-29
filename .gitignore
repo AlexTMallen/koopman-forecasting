@@ -1,9 +1,16 @@
+readCSV.py
+
 # saved numpy files
 *.npy
 
-# images
+#data
+GEFCom2014/*
+GEFCom2017/*
+
+# images and media
 *.png
 *.jpg
+*.pptx
 
 # pycharm files
 .idea/*

@@ -25,8 +25,8 @@ def koopman_main():
         sigma_hat = np.load(sigma_file)
     except IOError or FileNotFoundError as e:
         print(e)
-        model = FullyConnectedNLL(x_dim=1, num_freqs_mu=5, num_freqs_sigma=5, n=512)
-        k = KoopmanProb(model, device='cpu', sample_num=24, min_periods=2, num_fourier_modes=3)
+        model = FullyConnectedNLL(x_dim=1, num_freqs_mu=2, num_freqs_sigma=2, n=512)
+        k = KoopmanProb(model, device='cpu', sample_num=24, min_periods=2, num_fourier_modes=0)
         xt = enrgy[:5000]
         k.find_fourier_omegas(xt)
         k.fit(xt, iterations=150, interval=20, verbose=True, cutoff=99)  # slice must be at least 1000
