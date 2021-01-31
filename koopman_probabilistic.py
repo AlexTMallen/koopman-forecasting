@@ -84,15 +84,23 @@ class KoopmanProb(nn.Module):
         self.model_obj = nn.DataParallel(model_obj, device_ids=kwargs['device']) if multi_gpu else model_obj
         self.sample_num = sample_num
 
-    def find_fourier_omegas(self, xt):
+    def find_fourier_omegas(self, xt, hard_code=None):
         """
         computes the fft of the data to "hard-code" self.num_fourier_modes values of omega that
         will remain constant through optimization
 
         :param xt: the data to initialize fourier modes with
-        :return: None
+        :param hard_code: specifically define the periods you wish to preset the model with in a list
+                          pre condition: len(hard_code) == self.num_fourier_modes
+        :return: omegas found
         """
-        if self.num_fourier_modes > 0:
+        if hard_code is not None:
+            best_omegas = 2 * np.pi / torch.tensor(hard_code)
+            self.omegas[:self.num_fourier_modes] = best_omegas
+            self.omegas[self.model_obj.num_freqs_mu: self.model_obj.num_freqs_mu + self.num_fourier_modes] = best_omegas
+            return best_omegas
+        
+        elif self.num_fourier_modes > 0:
             xt_ft = np.fft.fft(np.reshape(xt, xt.size))
             adj_xt_ft = abs(xt_ft) + abs(np.flip(xt_ft))
             freqs = np.fft.fftfreq(len(xt_ft))
@@ -111,7 +119,8 @@ class KoopmanProb(nn.Module):
             best_omegas = 2 * np.pi * torch.tensor(best_omegas)
             self.omegas[:self.num_fourier_modes] = best_omegas
             self.omegas[self.model_obj.num_freqs_mu: self.model_obj.num_freqs_mu + self.num_fourier_modes] = best_omegas
-            print("fourier omegas:", 2 * np.pi / best_omegas)
+            print("fourier periods:", 2 * np.pi / best_omegas)
+            return best_omegas
 
     def sample_error(self, xt, which):
         '''
@@ -175,9 +184,9 @@ class KoopmanProb(nn.Module):
         E_ft = np.zeros(errors.shape[0] * self.sample_num, dtype=np.complex64)
 
         for t in range(1, e_fft.shape[0] + 1):
-            E_ft[np.arange(self.sample_num) * t] += e_fft[t - 1, :self.sample_num]
+            E_ft[np.arange(self.sample_num // 2) * t] += e_fft[t - 1, :self.sample_num // 2]
 
-        # E_ft = np.concatenate([E_ft, np.conj(np.flip(E_ft))])[:-1]
+        E_ft = np.concatenate([E_ft, np.conj(np.flip(E_ft))])[:-1]
         E = np.real(np.fft.ifft(E_ft))
 
         if use_heuristic:
@@ -208,7 +217,7 @@ class KoopmanProb(nn.Module):
         '''
 
         E, E_ft = self.reconstruct(self.sample_error(xt, i))
-        omegas = np.linspace(0, 1, len(E))
+        omegas = np.linspace(0, 0.5, len(E))
 
         # get the values of omega that have already been used
         omegas_actual = self.omegas.cpu().detach().numpy()
@@ -242,11 +251,11 @@ class KoopmanProb(nn.Module):
         # plt.plot(errs[-1])
         # plt.show()
 
-        plt.plot(omegas, E)
-        plt.title(f"omega {i}")
-        plt.xlabel("frequency (periods per time)")
-        plt.ylabel("loss")
-        plt.show()
+        # plt.plot(omegas, E)
+        # plt.title(f"omega {i}")
+        # plt.xlabel("frequency (periods per time)")
+        # plt.ylabel("loss")
+        # plt.show()
 
         return E, E_ft
 
@@ -276,8 +285,9 @@ class KoopmanProb(nn.Module):
 
         omega = nn.Parameter(self.omegas)
 
-        opt = optim.Adam(self.model_obj.parameters(), lr=1e-3 * (1 / (1 + np.exp(-(iteration - 15)))), betas=(0.99, 0.9999), eps=1e-5, weight_decay=weight_decay)
-        opt_omega = optim.SGD([omega], lr=1e-5 / T * (1 / (1 + np.exp(-(iteration - 15)))))
+#         opt = optim.Adam(self.model_obj.parameters(), lr=1e-4 * (1 / (1 + np.exp(-(iteration - 15)))), betas=(0.99, 0.9999), eps=1e-5, weight_decay=weight_decay)
+        opt = optim.SGD(self.model_obj.parameters(), lr=1e-2 * (1 / (1 + np.exp(-(iteration - 15)))), weight_decay=weight_decay)
+        opt_omega = optim.SGD([omega], lr=1e-100 / T * (1 / (1 + np.exp(-(iteration - 15)))))
 
         T = xt.shape[0]
         t = torch.arange(T, device=self.device)
@@ -300,7 +310,7 @@ class KoopmanProb(nn.Module):
             k = torch.cat([torch.cos(wt), torch.sin(wt)], -1)
             loss = torch.mean(self.model_obj(k, xt_t))
 
-            if loss > 10000:
+            if loss > 10e9:
                 print("loss at:", i, loss)
 
             opt.zero_grad()
