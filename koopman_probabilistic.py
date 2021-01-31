@@ -286,7 +286,7 @@ class KoopmanProb(nn.Module):
         omega = nn.Parameter(self.omegas)
 
 #         opt = optim.Adam(self.model_obj.parameters(), lr=1e-4 * (1 / (1 + np.exp(-(iteration - 15)))), betas=(0.99, 0.9999), eps=1e-5, weight_decay=weight_decay)
-        opt = optim.SGD(self.model_obj.parameters(), lr=1e-2 * (1 / (1 + np.exp(-(iteration - 15)))), weight_decay=weight_decay)
+        opt = optim.SGD(self.model_obj.parameters(), lr=1e-3 * (1 / (1 + np.exp(-(iteration - 15)))), weight_decay=weight_decay)
         opt_omega = optim.SGD([omega], lr=1e-100 / T * (1 / (1 + np.exp(-(iteration - 15)))))
 
         T = xt.shape[0]
