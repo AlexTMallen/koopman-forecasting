@@ -1,4 +1,5 @@
 readCSV.py
+main_debug.py
 
 # saved numpy files
 *.npy

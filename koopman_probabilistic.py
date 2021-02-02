@@ -259,7 +259,7 @@ class KoopmanProb(nn.Module):
 
         return E, E_ft
 
-    def sgd(self, xt, iteration, weight_decay=0, verbose=False):
+    def sgd(self, xt, iteration, weight_decay=0, verbose=False, lr_theta=1e-5, lr_omega=1e-5):
         '''
 
         sgd performs a single epoch of stochastic gradient descent on parameters
@@ -286,8 +286,8 @@ class KoopmanProb(nn.Module):
         omega = nn.Parameter(self.omegas)
 
 #         opt = optim.Adam(self.model_obj.parameters(), lr=1e-4 * (1 / (1 + np.exp(-(iteration - 15)))), betas=(0.99, 0.9999), eps=1e-5, weight_decay=weight_decay)
-        opt = optim.SGD(self.model_obj.parameters(), lr=1e-3 * (1 / (1 + np.exp(-(iteration - 15)))), weight_decay=weight_decay)
-        opt_omega = optim.SGD([omega], lr=1e-100 / T * (1 / (1 + np.exp(-(iteration - 15)))))
+        opt = optim.SGD(self.model_obj.parameters(), lr=lr_theta * (1 / (1 + np.exp(-(iteration - 15)))), weight_decay=weight_decay)
+        opt_omega = optim.SGD([omega], lr=lr_omega / T * (1 / (1 + np.exp(-(iteration - 15)))))
 
         T = xt.shape[0]
         t = torch.arange(T, device=self.device)
@@ -330,7 +330,7 @@ class KoopmanProb(nn.Module):
 
         return np.mean(losses)
 
-    def fit(self, xt, iterations=10, interval=5, cutoff=np.inf, weight_decay=0, verbose=False):
+    def fit(self, xt, iterations=10, interval=5, cutoff=np.inf, weight_decay=0, verbose=False, lr_theta=1e-5, lr_omega=1e-5):
         '''
         Given a dataset, this function alternatingly optimizes omega and
         parameters of f. Specifically, the algorithm performs interval many
@@ -371,7 +371,7 @@ class KoopmanProb(nn.Module):
                 print('Iteration ', i)
                 print(2 * np.pi / self.omegas)
 
-            l = self.sgd(xt, i, weight_decay=weight_decay, verbose=verbose)
+            l = self.sgd(xt, i, weight_decay=weight_decay, verbose=verbose, lr_theta=lr_theta, lr_omega=lr_omega)
             losses.append(l)
             if verbose:
                 print('Loss: ', l)
