@@ -452,26 +452,22 @@ class FullyConnectedNLL(ModelObject):
 
     def __init__(self, x_dim, num_freqs_mu, num_freqs_sigma, n):
         super(FullyConnectedNLL, self).__init__(num_freqs_mu, num_freqs_sigma)
-        self.mask_mu = torch.zeros(2 * self.num_freqs)
-        self.mask_mu[:2 * num_freqs_mu] = 1
-        self.mask_sigma = torch.zeros(2 * self.num_freqs)
-        self.mask_sigma[2 * num_freqs_mu:] = 1
 
-        self.l1_mu = nn.Linear(2 * self.num_freqs, n)
+        self.l1_mu = nn.Linear(2 * self.num_freqs_mu, n)
         self.l2_mu = nn.Linear(n, 64)
         self.l3_mu = nn.Linear(64, x_dim)
 
-        self.l1_sig = nn.Linear(2 * self.num_freqs, n)
+        self.l1_sig = nn.Linear(2 * self.num_freqs_sigma, n)
         self.l2_sig = nn.Linear(n, 64)
         self.l3_sig = nn.Linear(64, x_dim)
 
     def decode(self, w):
-        w_mu = w * self.mask_mu
+        w_mu = w[..., :2 * self.num_freqs_mu]
         y1 = nn.Tanh()(self.l1_mu(w_mu))
         y2 = nn.Tanh()(self.l2_mu(y1))
         y = self.l3_mu(y2)
 
-        w_sigma = w * self.mask_sigma
+        w_sigma = w[..., 2 * self.num_freqs_mu:]
         z1 = nn.Tanh()(self.l1_sig(w_sigma))
         z2 = nn.Tanh()(self.l2_sig(z1))
         z = nn.Softplus()(self.l3_sig(z2))
