@@ -495,3 +495,11 @@ class SkewNLL(ModelObject):
         y, z, a = self.decode(w)
         norm = torch.distributions.normal.Normal(0, 1)
         return -torch.mean((-(data - y)**2 / (2 * z**2)) - z.log() + norm.cdf(a * (data - y) / abs(z)).log(), dim=-1)
+
+    def mean(self, mu, sigma, alpha):
+        delta = alpha / (1 + alpha ** 2) ** 0.5
+        return mu + sigma * delta * (2 / np.pi) ** 0.5
+
+    def std(selfs, mu, sigma, alpha):
+        delta = alpha / (1 + alpha ** 2) ** 0.5
+        return sigma * (1 - 2 * delta ** 2 / np.pi) ** 0.5
