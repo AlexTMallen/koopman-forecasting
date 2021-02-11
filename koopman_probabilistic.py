@@ -44,8 +44,8 @@ class KoopmanProb(nn.Module):
     seed: The seed to set for pyTorch and numpy--WARNING: does not seem to make results reproducible
 
     num_fourier_modes: the number of frequencies to set using the argmax values of the fourier transform. these are
-                       shared between mu and sigma
-                       condition: num_fourier_modes <= min(num_freqs_mu, num_freqs_sigma)
+                       shared between all parameters
+                       condition: num_fourier_modes <= min(num_freqs)
                        default = 0
 
     '''
@@ -53,6 +53,7 @@ class KoopmanProb(nn.Module):
     def __init__(self, model_obj, sample_num=12, seed=None, **kwargs):
 
         super(KoopmanProb, self).__init__()
+        self.total_freqs = model_obj.total_freqs
         self.num_freqs = model_obj.num_freqs
 
         if seed is not None:
@@ -78,7 +79,7 @@ class KoopmanProb(nn.Module):
         self.batch_size = kwargs['batch_size'] if 'batch_size' in kwargs else 32
 
         # Initial guesses for frequencies
-        self.omegas = torch.linspace(0.01, 0.5, self.num_freqs, device=self.device)
+        self.omegas = torch.linspace(0.01, 0.5, self.total_freqs, device=self.device)
 
         model_obj = model_obj.to(self.device)
         self.model_obj = nn.DataParallel(model_obj, device_ids=kwargs['device']) if multi_gpu else model_obj
@@ -94,11 +95,9 @@ class KoopmanProb(nn.Module):
                           pre condition: len(hard_code) == self.num_fourier_modes
         :return: omegas found
         """
+        best_omegas = None
         if hard_code is not None:
             best_omegas = 2 * np.pi / torch.tensor(hard_code)
-            self.omegas[:self.num_fourier_modes] = best_omegas
-            self.omegas[self.model_obj.num_freqs_mu: self.model_obj.num_freqs_mu + self.num_fourier_modes] = best_omegas
-            return best_omegas
         
         elif self.num_fourier_modes > 0:
             xt_ft = np.fft.fft(np.reshape(xt, xt.size))
@@ -117,10 +116,13 @@ class KoopmanProb(nn.Module):
                 i += 1
 
             best_omegas = 2 * np.pi * torch.tensor(best_omegas)
-            self.omegas[:self.num_fourier_modes] = best_omegas
-            self.omegas[self.model_obj.num_freqs_mu: self.model_obj.num_freqs_mu + self.num_fourier_modes] = best_omegas
             print("fourier periods:", 2 * np.pi / best_omegas)
-            return best_omegas
+
+        idx = 0
+        for num_freqs in self.num_freqs:
+            self.omegas[idx:idx + self.num_fourier_modes] = best_omegas
+            idx += num_freqs
+        return best_omegas
 
     def sample_error(self, xt, which):
         '''
@@ -220,23 +222,23 @@ class KoopmanProb(nn.Module):
         omegas = np.linspace(0, 0.5, len(E))
 
         # get the values of omega that have already been used
-        omegas_actual = self.omegas.cpu().detach().numpy()
-        if i < self.model_obj.num_freqs_mu:
-            omegas_actual = omegas_actual[:self.model_obj.num_freqs_mu]
-            omegas_actual[i] = -1
-        else:
-            omegas_actual = omegas_actual[self.model_obj.num_freqs_mu:]
-            omegas_actual[i - self.model_obj.num_freqs_mu] = -1
+        omegas_current = self.omegas.cpu().detach().numpy()
+        omegas_current[i] = -1
+        for j, num_freqs in enumerate(self.num_freqs):
+            lower = sum(self.num_freqs[:j])
+            upper = sum(self.num_freqs[:j + 1])
+            if lower <= i < upper:
+                omegas_current = omegas_current[lower:upper]
 
         found = False
         j = 0
         while not found:
 
-            amax = np.argpartition(E, j)[j]  # ith biggest freq
+            amax = np.argpartition(E, j)[j]  # jth biggest freq
             # The if statement avoids non-unique entries in omega and that the
             # frequencies are 0 (should be handled by bias term)
             # "nonzero AND has a period that's more than 1 different from those that have already been discovered"
-            if amax >= 1 and np.all(np.abs(2 * np.pi / omegas_actual - 1 / omegas[amax]) > 1):
+            if amax >= 1 and np.all(np.abs(2 * np.pi / omegas_current - 1 / omegas[amax]) > 1):
                 found = True
                 if verbose:
                     print('Setting', i, 'to', 1 / omegas[amax])
@@ -285,7 +287,7 @@ class KoopmanProb(nn.Module):
 
         omega = nn.Parameter(self.omegas)
 
-#         opt = optim.Adam(self.model_obj.parameters(), lr=1e-4 * (1 / (1 + np.exp(-(iteration - 15)))), betas=(0.99, 0.9999), eps=1e-5, weight_decay=weight_decay)
+        # opt = optim.Adam(self.model_obj.parameters(), lr=1e-4 * (1 / (1 + np.exp(-(iteration - 15)))), betas=(0.99, 0.9999), eps=1e-5, weight_decay=weight_decay)
         opt = optim.SGD(self.model_obj.parameters(), lr=lr_theta * (1 / (1 + np.exp(-(iteration - 15)))), weight_decay=weight_decay)
         opt_omega = optim.SGD([omega], lr=lr_omega / T * (1 / (1 + np.exp(-(iteration - 15)))))
 
@@ -361,11 +363,11 @@ class KoopmanProb(nn.Module):
         for i in range(iterations):
 
             if i % interval == 0 and i < cutoff:
-                # skips the fourier mode frequencies
-                for k in range(self.num_fourier_modes, self.model_obj.num_freqs_mu):
-                    self.fft(xt, k, verbose=verbose)
-                for k in range(self.num_fourier_modes + self.model_obj.num_freqs_mu, self.num_freqs):
-                    self.fft(xt, k, verbose=verbose)
+                param_num = 0  # only update omegas that are note the first self.num_fourier_modes idxs of each param
+                for num_freqs in self.num_freqs:
+                    for k in range(param_num + self.num_fourier_modes, num_freqs):
+                        self.fft(xt, k, verbose=verbose)
+                    param_num += num_freqs
 
             if verbose:
                 print('Iteration ', i)
@@ -401,20 +403,19 @@ class KoopmanProb(nn.Module):
         k = torch.cat([torch.cos(ts_ * o), torch.sin(ts_ * o)], -1)
 
         if self.multi_gpu:
-            mu, sigma = self.model_obj.module.decode(k)
+            params = self.model_obj.module.decode(k)
         else:
-            mu, sigma = self.model_obj.decode(k)
+            params = self.model_obj.decode(k)
 
-        return mu.cpu().detach().numpy(), sigma.cpu().detach().numpy()
+        return tuple(param.cpu().detach().numpy() for param in params)
 
 
 class ModelObject(nn.Module):
     
-    def __init__(self, num_freqs_mu, num_freqs_sigma):
+    def __init__(self, num_freqs):
         super(ModelObject, self).__init__()
-        self.num_freqs_mu = num_freqs_mu
-        self.num_freqs_sigma = num_freqs_sigma
-        self.num_freqs = num_freqs_mu + num_freqs_sigma
+        self.num_freqs = num_freqs
+        self.total_freqs = sum(num_freqs)
 
     def forward(self, y, x):
         """
@@ -448,40 +449,49 @@ class ModelObject(nn.Module):
         raise NotImplementedError()
 
 
-class FullyConnectedNLL(ModelObject):
+class SkewNLL(ModelObject):
 
-    def __init__(self, x_dim, num_freqs_mu, num_freqs_sigma, n):
-        super(FullyConnectedNLL, self).__init__(num_freqs_mu, num_freqs_sigma)
+    def __init__(self, x_dim, num_freqs, n):
+        """
+        neural network that takes a vector of sines and cosines and produces a skew-normal distribution with parameters
+        mu, sigma, and alpha (the outputs of the NN)
+        :param x_dim: number of dimensions spanned by the probability distr
+        :param num_freqs: list. number of frequencies used for each of the 3 parameters: [num_mu, num_sig, num_alpha]
+        :param n: size of NN's second layer
+        """
+        super(SkewNLL, self).__init__(num_freqs)
 
-        self.l1_mu = nn.Linear(2 * self.num_freqs_mu, n)
+        self.l1_mu = nn.Linear(2 * self.num_freqs[0], n)
         self.l2_mu = nn.Linear(n, 64)
         self.l3_mu = nn.Linear(64, x_dim)
 
-        self.l1_sig = nn.Linear(2 * self.num_freqs_sigma, n)
+        self.l1_sig = nn.Linear(2 * self.num_freqs[1], n)
         self.l2_sig = nn.Linear(n, 64)
         self.l3_sig = nn.Linear(64, x_dim)
 
+        self.l1_a = nn.Linear(2 * self.num_freqs[2], n)
+        self.l2_a = nn.Linear(n, 64)
+        self.l3_a = nn.Linear(64, x_dim)
+
     def decode(self, w):
-        w_mu = w[..., :2 * self.num_freqs_mu]
+        w_mu = w[..., :2 * self.num_freqs[0]]
         y1 = nn.Tanh()(self.l1_mu(w_mu))
         y2 = nn.Tanh()(self.l2_mu(y1))
         y = self.l3_mu(y2)
 
-        w_sigma = w[..., 2 * self.num_freqs_mu:]
+        w_sigma = w[..., 2 * self.num_freqs[0]:2 * self.num_freqs[0] + 2 * self.num_freqs[1]]
         z1 = nn.Tanh()(self.l1_sig(w_sigma))
         z2 = nn.Tanh()(self.l2_sig(z1))
-        z = nn.Softplus()(self.l3_sig(z2))
-        
-        return y, z
+        z = 1000 * nn.Softplus()(self.l3_sig(z2))  # std should start big to avoid infinite gradients
+
+        w_a = w[..., -2 * self.num_freqs[2]:]
+        a1 = nn.Tanh()(self.l1_a(w_a))
+        a2 = nn.Tanh()(self.l2_a(y1))
+        a = self.l3_a(y2)
+
+        return y, z, a
 
     def forward(self, w, data):
-        y, z = self.decode(w)
-        # l1_reg = 0
-        # lamb = 1e-150
-        # for p in self.named_parameters():
-        #     name = p[0]
-        #     data = p[1].data
-        #     if "sig" in name:
-        #         l1_reg += torch.linalg.norm(data, ord=1)
-        # negative log likelihood of observing data given gaussians with mu=x and sigma=z
-        return torch.mean((data - y)**2 / (2 * z**2) + torch.log(z), dim=-1)
+        y, z, a = self.decode(w)
+        norm = torch.distributions.normal.Normal(0, 1)
+        return -torch.mean((-(data - y)**2 / (2 * z**2)) - z.log() + norm.cdf(a * (data - y) / abs(z)).log(), dim=-1)

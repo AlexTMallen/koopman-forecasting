@@ -8,40 +8,49 @@ def koopman_main():
     # np.random.seed(seed)
     # print("SEED:", seed)
 
-    # mu_vec = 2 * np.sin(2 * np.pi / 24 * np.arange(5000))
-    # sigma_vec = 3 * np.sin(2 * np.pi / 34 * np.arange(5000) + 1.5) + 3
-    # rng = np.random.default_rng(seed)
-    # x = rng.normal(mu_vec, sigma_vec).astype(np.float32)
-    # x = np.expand_dims(x, 1)
-    predict_through = 24000
-    enrgy = np.load("energy_data.npy")
+    x = np.load("energy_data.npy")
+    data_name = "energy_data"
 
-    mu_file = "3mu_energy.npy"
-    sigma_file = "3sigma_energy.npy"
-    params_file = "3mu8sigma_params.npy"
-    try:
-        raise IOError
-        mu_hat = np.load(mu_file)
-        sigma_hat = np.load(sigma_file)
-    except IOError or FileNotFoundError as e:
-        print(e)
-        model = FullyConnectedNLL(x_dim=1, num_freqs_mu=2, num_freqs_sigma=2, n=512)
-        k = KoopmanProb(model, device='cpu', sample_num=24, min_periods=2, num_fourier_modes=0)
-        xt = enrgy[:5000]
-        k.find_fourier_omegas(xt)
-        k.fit(xt, iterations=150, interval=20, verbose=True, cutoff=99)  # slice must be at least 1000
-        mu_hat, sigma_hat = k.predict(predict_through)
-        np.save(mu_file, mu_hat)
-        np.save(sigma_file, sigma_hat)
-        np.save(params_file, np.array(list(k.parameters())))
+    predict_through = x.shape[0]
+    train_through = 2000
+    xt = x[:train_through, :]
 
-    # print("SEED:", seed)
-    slc = -2400
-    # plt.scatter(np.arange(-slc), x[slc:], label="data")
-    plt.plot(enrgy[:predict_through], label="data")
-    plt.plot(mu_hat, label="koopman")
-    plt.plot(mu_hat + sigma_hat, "--", color="black", label="koopman 68% CI")
-    plt.plot(mu_hat - sigma_hat, "--", color="black")
+    num_freqs = [3, 3, 3]
+    num_fourier = 2
+    mu_file = "forecasts//" + data_name + f"trainedThrough{train_through}_{num_freqs}mu.npy"
+    sigma_file = "forecasts//" + data_name + f"trainedThrough{train_through}_{num_freqs}sigma.npy"
+    alpha_file = "forecasts//" + data_name + f"trainedThrough{train_through}_{num_freqs}alpha.npy"
+
+    model = SkewNLL(x_dim=xt.shape[1], num_freqs=num_freqs, n=512)
+    k = KoopmanProb(model, device='cpu', sample_num=24, num_fourier_modes=num_fourier)
+    k.find_fourier_omegas(xt)
+
+    k.fit(xt, iterations=30, interval=10, verbose=True, cutoff=61, weight_decay=1e-1000, lr_theta=5e-3, lr_omega=1e-8)
+    mu_hat, sigma_hat, a_hat = k.predict(predict_through)
+    np.save(mu_file, mu_hat)
+    np.save(sigma_file, sigma_hat)
+    np.save(alpha_file, a_hat)
+
+    for dim in range(xt.shape[1]):
+        plt.figure()
+        # plt.scatter(np.arange(-slc), x[slc:], label="data")
+        plt.plot(x[:predict_through, dim], label="data")
+        plt.plot(mu_hat[:, dim], label="Koopman $\mu$", linewidth=0.8)
+        plt.plot(mu_hat[:, dim] + sigma_hat[:, dim], "--", color="black", label="Koopman $\mu \pm \sigma$ ", linewidth=0.5)
+        plt.plot(mu_hat[:, dim] - sigma_hat[:, dim], "--", color="black", linewidth=0.5)
+        plt.plot(a_hat[:, dim], color="orange", linewidth=0.7, label="Koopman $\\alpha$")
+
+        # plt.plot(mu_vec[slc:], label="real mu")
+        # plt.plot(mu_hat[slc:, 0], label="koopman mu")
+        # plt.legend()
+        # plt.show()
+        #
+        # plt.plot(sigma_vec[slc:], label="real sigma")
+        #     plt.plot(3*sigma_hat[:, dim], label="koopman $3\sigma$", linewidth=0.7)
+        plt.title(f"{num_freqs}_trainedThrough{train_through}_" + data_name)
+        plt.xlabel("t")
+        plt.legend()
+        plt.show()
 
     # plt.plot(mu_vec[slc:], label="real mu")
     # plt.plot(mu_hat[slc:, 0], label="koopman mu")
@@ -49,9 +58,9 @@ def koopman_main():
     # plt.show()
     #
     # plt.plot(sigma_vec[slc:], label="real sigma")
-    plt.plot(sigma_hat, label="koopman sigma")
-    plt.legend()
-    plt.show()
+    # plt.plot(sigma_hat, label="koopman sigma")
+    # plt.legend()
+    # plt.show()
 
 
 def generate_frac_seq(num_iters, value, n=3):

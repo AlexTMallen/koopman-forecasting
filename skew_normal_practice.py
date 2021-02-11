@@ -10,7 +10,7 @@ import numpy as np
 
 from torch import optim
 import torch.distributions.normal as normal
-from scipy.stats import skewnorm
+from scipy import stats
 
 import matplotlib.pyplot as plt
 
@@ -30,10 +30,10 @@ SIGMA = 1
 SKEW = 4
 
 data_size = 40_000
-randx = skewnorm.rvs(SKEW, MU, SIGMA, data_size)
+randx = stats.skewnorm.rvs(SKEW, MU, SIGMA, data_size)
 x = torch.tensor(randx)
 
-y = torch.tensor(np.random.uniform(-10, -5, 1), requires_grad=True)
+y = torch.tensor(np.random.uniform(-10, 10, 1), requires_grad=True)
 z = torch.tensor(np.random.uniform(10, 20, 1), requires_grad=True)
 # s = torch.randn(1, requires_grad=True)
 s = torch.tensor([4.1], requires_grad=True)  # skewness
@@ -55,7 +55,7 @@ optimizer = optim.Adam([y, z, s], lr=0.01)
 
 # In[169]:
 
-dist = normal.Normal(0, 1)
+norm = normal.Normal(0, 1)
 epochs = 100
 batch_size = 100
 for epoch in range(epochs):
@@ -63,11 +63,11 @@ for epoch in range(epochs):
         # print(dist.cdf(s * (x - y) / abs(z)))
         optimizer.zero_grad()
         batch = x[i:i + batch_size]
-        loss = -torch.mean(torch.log(normal_pdf(x, y, abs(z)) * dist.cdf(s * (x - y) / abs(z))))
+        loss = -torch.mean(normal_pdf(x, y, abs(z)).log() + norm.cdf(s * (x - y) / abs(z)).log())
         loss.backward()
         optimizer.step()
         
-    print(loss)
+    print("loss:", float(loss))
     print("est mean:", float(y), "est sigma", float(z), "est skew:", float(s))
         
 

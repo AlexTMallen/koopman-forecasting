@@ -1,5 +1,7 @@
 readCSV.py
 main_debug.py
+FPUT Oscillator.ipynb
+recoverGaussian.ipynb
 
 # saved numpy files
 *.npy
@@ -12,6 +14,7 @@ GEFCom2017/*
 *.png
 *.jpg
 *.pptx
+figures/*
 
 # pycharm files
 .idea/*
