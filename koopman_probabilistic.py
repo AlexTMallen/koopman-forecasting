@@ -365,7 +365,7 @@ class KoopmanProb(nn.Module):
             if i % interval == 0 and i < cutoff:
                 param_num = 0  # only update omegas that are note the first self.num_fourier_modes idxs of each param
                 for num_freqs in self.num_freqs:
-                    for k in range(param_num + self.num_fourier_modes, num_freqs):
+                    for k in range(param_num + self.num_fourier_modes, param_num + num_freqs):
                         self.fft(xt, k, verbose=verbose)
                     param_num += num_freqs
 
