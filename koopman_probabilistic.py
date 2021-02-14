@@ -118,10 +118,11 @@ class KoopmanProb(nn.Module):
             best_omegas = 2 * np.pi * torch.tensor(best_omegas)
             print("fourier periods:", 2 * np.pi / best_omegas)
 
-        idx = 0
-        for num_freqs in self.num_freqs:
-            self.omegas[idx:idx + self.num_fourier_modes] = best_omegas
-            idx += num_freqs
+        if best_omegas is not None:
+            idx = 0
+            for num_freqs in self.num_freqs:
+                self.omegas[idx:idx + self.num_fourier_modes] = best_omegas
+                idx += num_freqs
         return best_omegas
 
     def sample_error(self, xt, which):
@@ -155,7 +156,7 @@ class KoopmanProb(nn.Module):
         t = torch.arange(xt.shape[0], device=self.device) + 1
         errors = []
 
-        pi_block = torch.zeros((num_samples, len(omega)))
+        pi_block = torch.zeros((num_samples, len(omega)), device=self.device)
         pi_block[:, which] = torch.arange(0, num_samples) * np.pi * 2 / num_samples
 
         if t.shape[0] < batch:
