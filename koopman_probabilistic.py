@@ -449,6 +449,65 @@ class ModelObject(nn.Module):
         """
         raise NotImplementedError()
 
+    def mean(self, params):
+        """returns the mean of a distribution with the given params"""
+        raise NotImplementedError()
+
+    def std(self, params):
+        """returns the standard deviation of a distribution with the given params"""
+        raise NotImplementedError()
+
+
+class NormalNLL(ModelObject):
+
+    def __init__(self, x_dim, num_freqs, n):
+        """
+        Negative Log Likelihood neural network assuming Gaussian distribution of x at every point in time
+        :param x_dim: dimension of what will be modeled
+        :param num_freqs: list of the number of frequencies used to model each parameter: [num_mu, num_sigma]
+        :param n: size of 2nd layer of NN
+        """
+        super(NormalNLL, self).__init__(num_freqs)
+
+        self.l1_mu = nn.Linear(2 * self.num_freqs[0], n)
+        self.l2_mu = nn.Linear(n, 64)
+        self.l3_mu = nn.Linear(64, x_dim)
+
+        self.l1_sig = nn.Linear(2 * self.num_freqs[1], n)
+        self.l2_sig = nn.Linear(n, 64)
+        self.l3_sig = nn.Linear(64, x_dim)
+
+    def decode(self, w):
+        w_mu = w[..., :2 * self.num_freqs[0]]
+        y1 = nn.Tanh()(self.l1_mu(w_mu))
+        y2 = nn.Tanh()(self.l2_mu(y1))
+        y = self.l3_mu(y2)
+
+        w_sigma = w[..., 2 * self.num_freqs[0]:]
+        z1 = nn.Tanh()(self.l1_sig(w_sigma))
+        z2 = nn.Tanh()(self.l2_sig(z1))
+        z = nn.Softplus()(self.l3_sig(z2))
+
+        return y, z
+
+    def forward(self, w, data):
+        y, z = self.decode(w)
+        # l1_reg = 0
+        # lamb = 1e-150
+        # for p in self.named_parameters():
+        #     name = p[0]
+        #     data = p[1].data
+        #     if "sig" in name:
+        #         l1_reg += torch.linalg.norm(data, ord=1)
+        # negative log likelihood of observing data given gaussians with mu=x and sigma=z
+        return torch.mean((data - y) ** 2 / (2 * z ** 2) + torch.log(z), dim=-1)
+
+    def mean(self, params):
+        return params[0]
+
+    def std(self, params):
+        return params[1]
+
 
 class SkewNLL(ModelObject):
 
@@ -497,10 +556,12 @@ class SkewNLL(ModelObject):
         norm = torch.distributions.normal.Normal(0, 1)
         return -torch.mean((-(data - y)**2 / (2 * z**2)) - z.log() + norm.cdf(a * (data - y) / abs(z)).log(), dim=-1)
 
-    def mean(self, mu, sigma, alpha):
+    def mean(self, params):
+        mu, sigma, alpha = params
         delta = alpha / (1 + alpha ** 2) ** 0.5
         return mu + sigma * delta * (2 / np.pi) ** 0.5
 
-    def std(selfs, mu, sigma, alpha):
+    def std(selfs, params):
+        mu, sigma, alpha = params
         delta = alpha / (1 + alpha ** 2) ** 0.5
         return sigma * (1 - 2 * delta ** 2 / np.pi) ** 0.5
