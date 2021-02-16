@@ -594,7 +594,6 @@ class AlternatingSkewNLL(ModelObject):
                            being used to train mu and sigma/alpha
         """
         super(AlternatingSkewNLL, self).__init__(num_freqs)
-        self.num_slices = num_slices
 
         self.l1_mu = nn.Linear(2 * self.num_freqs[0], n)
         self.l2_mu = nn.Linear(n, 64)
