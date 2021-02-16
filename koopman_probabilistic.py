@@ -167,7 +167,7 @@ class KoopmanProb(nn.Module):
             wt[:, which] = 0
             wt = wt[:, None] + pi_block[None]
             k = torch.cat([torch.cos(wt), torch.sin(wt)], -1)
-            loss = self.model_obj(k, xt[i * batch:(i + 1) * batch, None]).cpu().detach().numpy()
+            loss = self.model_obj(k, xt[i * batch:(i + 1) * batch, None], None).cpu().detach().numpy()
             errors.append(loss)
 
         if self.device.startswith('cuda'):
@@ -262,7 +262,7 @@ class KoopmanProb(nn.Module):
 
         return E, E_ft
 
-    def sgd(self, xt, iteration, weight_decay=0, verbose=False, lr_theta=1e-5, lr_omega=1e-5):
+    def sgd(self, xt, iteration, weight_decay=0, verbose=False, lr_theta=1e-5, lr_omega=1e-5, num_slices=None):
         '''
 
         sgd performs a single epoch of stochastic gradient descent on parameters
@@ -272,7 +272,7 @@ class KoopmanProb(nn.Module):
         ----------
         xt : TYPE numpy.array
             Temporal data whose first dimension is time.
-        verbose : TYPE boolean, optionaly
+        verbose : TYPE boolean, optionally
             The default is False.
 
         Returns
@@ -295,11 +295,18 @@ class KoopmanProb(nn.Module):
         T = xt.shape[0]
         t = torch.arange(T, device=self.device)
 
+        training_mask = None
+        if num_slices is not None:
+            slice_width = T // num_slices
+            training_mask = torch.zeros(T, device=self.device)
+            for slc in range(num_slices):
+                if slc % 2 == iteration % 2:
+                    training_mask[slc * slice_width: (slc + 1) * slice_width] = 1
+
         losses = []
 
-       
         for i in range(len(t) // batch_size + 1):
-            if  i == len(t) // batch_size:  # remainder data with batch smaller than batch_size
+            if i == len(t) // batch_size:  # remainder data with batch smaller than batch_size
                 ts = t[-(len(t) % batch_size):]
             else:
                 ts = t[i * batch_size:(i + 1) * batch_size]
@@ -311,10 +318,11 @@ class KoopmanProb(nn.Module):
             wt = ts_ * o
 
             k = torch.cat([torch.cos(wt), torch.sin(wt)], -1)
-            loss = torch.mean(self.model_obj(k, xt_t))
+            batch_mask = training_mask[i * batch_size:(i + 1) * batch_size] if training_mask else None
+            loss = torch.mean(self.model_obj(k, xt_t, batch_mask))
 
             if loss > 10e9:
-                print("loss at:", i, loss)
+                print("big loss at:", str(i) + ":", loss)
 
             opt.zero_grad()
             opt_omega.zero_grad()
@@ -333,7 +341,7 @@ class KoopmanProb(nn.Module):
 
         return np.mean(losses)
 
-    def fit(self, xt, iterations=10, interval=5, cutoff=np.inf, weight_decay=0, verbose=False, lr_theta=1e-5, lr_omega=1e-5):
+    def fit(self, xt, iterations=10, interval=5, cutoff=np.inf, weight_decay=0, verbose=False, lr_theta=1e-5, lr_omega=1e-5, num_slices=None):
         '''
         Given a dataset, this function alternatingly optimizes omega and
         parameters of f. Specifically, the algorithm performs interval many
@@ -351,6 +359,11 @@ class KoopmanProb(nn.Module):
             interval is 5, then omegas are updated every 5 epochs. The default is 5.
         verbose : TYPE boolean, optional
             DESCRIPTION. The default is False.
+        cutoff : TYPE int, number of iterations after which to stop updating omegas
+        weight_decay : TYPE float, regularization parameter
+        lr_theta : TYPE float, learning rate for the model object
+        lr_omega : TYPE float, learning rate for adjusting omegas
+        num_slices : TYPE int, number of slices into which training data should be divided to prevent overfitting
 
         Returns
         -------
@@ -374,7 +387,7 @@ class KoopmanProb(nn.Module):
                 print('Iteration ', i)
                 print(2 * np.pi / self.omegas)
 
-            l = self.sgd(xt, i, weight_decay=weight_decay, verbose=verbose, lr_theta=lr_theta, lr_omega=lr_omega)
+            l = self.sgd(xt, i, weight_decay=weight_decay, verbose=verbose, lr_theta=lr_theta, lr_omega=lr_omega, num_slices=num_slices)
             losses.append(l)
             if verbose:
                 print('Loss: ', l)
@@ -514,7 +527,7 @@ class SkewNLL(ModelObject):
     def __init__(self, x_dim, num_freqs, n):
         """
         neural network that takes a vector of sines and cosines and produces a skew-normal distribution with parameters
-        mu, sigma, and alpha (the outputs of the NN)
+        mu, sigma, and alpha (the outputs of the NN). trains using NLL.
         :param x_dim: number of dimensions spanned by the probability distr
         :param num_freqs: list. number of frequencies used for each of the 3 parameters: [num_mu, num_sig, num_alpha]
         :param n: size of NN's second layer
@@ -553,6 +566,80 @@ class SkewNLL(ModelObject):
 
     def forward(self, w, data):
         y, z, a = self.decode(w)
+        norm = torch.distributions.normal.Normal(0, 1)
+        return -torch.mean((-(data - y)**2 / (2 * z**2)) - z.log() + norm.cdf(a * (data - y) / abs(z)).log(), dim=-1)
+
+    def mean(self, params):
+        mu, sigma, alpha = params
+        delta = alpha / (1 + alpha ** 2) ** 0.5
+        return mu + sigma * delta * (2 / np.pi) ** 0.5
+
+    def std(selfs, params):
+        mu, sigma, alpha = params
+        delta = alpha / (1 + alpha ** 2) ** 0.5
+        return sigma * (1 - 2 * delta ** 2 / np.pi) ** 0.5
+
+
+class AlternatingSkewNLL(ModelObject):
+
+    def __init__(self, x_dim, num_freqs, n):
+        """
+        neural network that takes a vector of sines and cosines and produces a skew-normal distribution with parameters
+        mu, sigma, and alpha (the outputs of the NN). trains using NLL and trains mu and sigma separately to prevent
+        overfitting
+        :param x_dim: number of dimensions spanned by the probability distr
+        :param num_freqs: list. number of frequencies used for each of the 3 parameters: [num_mu, num_sig, num_alpha]
+        :param n: size of NN's second layer
+        :param num_slices: training data will be divided into num_slices slices in time, and they will alternate between
+                           being used to train mu and sigma/alpha
+        """
+        super(AlternatingSkewNLL, self).__init__(num_freqs)
+        self.num_slices = num_slices
+
+        self.l1_mu = nn.Linear(2 * self.num_freqs[0], n)
+        self.l2_mu = nn.Linear(n, 64)
+        self.l3_mu = nn.Linear(64, x_dim)
+
+        self.l1_sig = nn.Linear(2 * self.num_freqs[1], n)
+        self.l2_sig = nn.Linear(n, 64)
+        self.l3_sig = nn.Linear(64, x_dim)
+
+        self.l1_a = nn.Linear(2 * self.num_freqs[2], n)
+        self.l2_a = nn.Linear(n, 64)
+        self.l3_a = nn.Linear(64, x_dim)
+
+    def decode(self, w):
+        w_mu = w[..., :2 * self.num_freqs[0]]
+        y1 = nn.Tanh()(self.l1_mu(w_mu))
+        y2 = nn.Tanh()(self.l2_mu(y1))
+        y = self.l3_mu(y2)
+
+        w_sigma = w[..., 2 * self.num_freqs[0]:2 * self.num_freqs[0] + 2 * self.num_freqs[1]]
+        z1 = nn.Tanh()(self.l1_sig(w_sigma))
+        z2 = nn.Tanh()(self.l2_sig(z1))
+        z = 1000 * nn.Softplus()(self.l3_sig(z2))  # std should start big to avoid infinite gradients
+
+        w_a = w[..., -2 * self.num_freqs[2]:]
+        a1 = nn.Tanh()(self.l1_a(w_a))
+        a2 = nn.Tanh()(self.l2_a(y1))
+        a = self.l3_a(y2)
+
+        return y, z, a
+
+    def forward(self, w, data, training_mask):
+        mu, sig, alpha = self.decode(w)
+        # training_mask = torch.zeros(mu.shape)
+        # window_len = mu.shape[0] // self.num_slices
+        # training_mask[range(0, mu.shape[-1], window_len), ...] = 1
+        if training_mask is None:
+            y = mu
+            z = sig
+            a = alpha
+        else:
+            y = training_mask * mu + (1 - training_mask) * mu.detach()
+            z = (1 - training_mask) * sig + training_mask * sig.detach()
+            a = (1 - training_mask) * alpha + training_mask * alpha.detach()
+
         norm = torch.distributions.normal.Normal(0, 1)
         return -torch.mean((-(data - y)**2 / (2 * z**2)) - z.log() + norm.cdf(a * (data - y) / abs(z)).log(), dim=-1)
 
