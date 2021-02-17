@@ -318,7 +318,9 @@ class KoopmanProb(nn.Module):
             wt = ts_ * o
 
             k = torch.cat([torch.cos(wt), torch.sin(wt)], -1)
-            batch_mask = training_mask[i * batch_size:(i + 1) * batch_size] if training_mask else None
+            batch_mask = training_mask[i * batch_size:(i + 1) * batch_size] if training_mask is not None else None
+            if batch_mask is not None and i % 2 == 1:
+                batch_mask = 1 - batch_mask
             loss = torch.mean(self.model_obj(k, xt_t, batch_mask))
 
             if loss > 10e9:
