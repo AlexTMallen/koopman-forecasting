@@ -15,6 +15,7 @@ GEFCom2017/*
 *.jpg
 *.pptx
 figures/*
+research/*
 
 # pycharm files
 .idea/*

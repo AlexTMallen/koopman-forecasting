@@ -289,7 +289,8 @@ class KoopmanProb(nn.Module):
         omega = nn.Parameter(self.omegas)
 
         # opt = optim.Adam(self.model_obj.parameters(), lr=1e-4 * (1 / (1 + np.exp(-(iteration - 15)))), betas=(0.99, 0.9999), eps=1e-5, weight_decay=weight_decay)
-        opt = optim.SGD(self.model_obj.parameters(), lr=lr_theta * (1 / (1 + np.exp(-(iteration - 15)))), weight_decay=weight_decay)
+#         opt = optim.SGD(self.model_obj.parameters(), lr=lr_theta * (1 / (1 + np.exp(-(iteration - 15)))), weight_decay=weight_decay)
+        opt = optim.SGD(self.model_obj.parameters(), lr=lr_theta, weight_decay=weight_decay)
         opt_omega = optim.SGD([omega], lr=lr_omega / T * (1 / (1 + np.exp(-(iteration - 15)))))
 
         T = xt.shape[0]
@@ -300,8 +301,10 @@ class KoopmanProb(nn.Module):
             slice_width = T // num_slices
             training_mask = torch.zeros(T, device=self.device)
             for slc in range(num_slices):
-                if slc % 2 == iteration % 2:
+#                 if slc % 2 == iteration % 2:
+                if slc % num_slices != 0:
                     training_mask[slc * slice_width: (slc + 1) * slice_width] = 1
+            print("training_mask:", training_mask[::slice_width // 2], training_mask.shape)
 
         losses = []
 
@@ -319,8 +322,8 @@ class KoopmanProb(nn.Module):
 
             k = torch.cat([torch.cos(wt), torch.sin(wt)], -1)
             batch_mask = training_mask[i * batch_size:(i + 1) * batch_size] if training_mask is not None else None
-            if batch_mask is not None and i % 2 == 1:
-                batch_mask = 1 - batch_mask
+#             if batch_mask is not None and i % 2 == 1:
+#                 batch_mask = 1 - batch_mask
             loss = torch.mean(self.model_obj(k, xt_t, batch_mask))
 
             if loss > 10e9:
@@ -638,11 +641,16 @@ class AlternatingSkewNLL(ModelObject):
             a = alpha
         else:
             y = training_mask * mu + (1 - training_mask) * mu.detach()
-            z = (1 - training_mask) * sig + training_mask * sig.detach()
-            a = (1 - training_mask) * alpha + training_mask * alpha.detach()
+#             z = (1 - training_mask) * sig + training_mask * sig.detach()
+#             a = (1 - training_mask) * alpha + training_mask * alpha.detach()
+            z = sig
+            a = alpha
 
         norm = torch.distributions.normal.Normal(0, 1)
-        return -torch.mean((-(data - y)**2 / (2 * z**2)) - z.log() + norm.cdf(a * (data - y) / abs(z)).log(), dim=-1)
+        losses = (-(data - y)**2 / (2 * z**2)) - z.log() + norm.cdf(a * (data - y) / abs(z)).log()
+        avg = -torch.mean(losses, dim=-1)
+#         return avg * torch.repeat_interleave(torch.linspace(0.5, 1.5, losses.shape[0])[:, None], avg.shape[-1], 1)
+        return avg
 
     def mean(self, params):
         mu, sigma, alpha = params
