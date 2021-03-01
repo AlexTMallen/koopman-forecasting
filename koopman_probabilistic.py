@@ -289,7 +289,7 @@ class KoopmanProb(nn.Module):
         omega = nn.Parameter(self.omegas)
 
         # opt = optim.Adam(self.model_obj.parameters(), lr=1e-4 * (1 / (1 + np.exp(-(iteration - 15)))), betas=(0.99, 0.9999), eps=1e-5, weight_decay=weight_decay)
-#         opt = optim.SGD(self.model_obj.parameters(), lr=lr_theta * (1 / (1 + np.exp(-(iteration - 15)))), weight_decay=weight_decay)
+        # opt = optim.SGD(self.model_obj.parameters(), lr=lr_theta * (1 / (1 + np.exp(-(iteration - 15)))), weight_decay=weight_decay)
         opt = optim.SGD(self.model_obj.parameters(), lr=lr_theta, weight_decay=weight_decay)
         opt_omega = optim.SGD([omega], lr=lr_omega / T * (1 / (1 + np.exp(-(iteration - 15)))))
 
@@ -510,14 +510,6 @@ class NormalNLL(ModelObject):
 
     def forward(self, w, data):
         y, z = self.decode(w)
-        # l1_reg = 0
-        # lamb = 1e-150
-        # for p in self.named_parameters():
-        #     name = p[0]
-        #     data = p[1].data
-        #     if "sig" in name:
-        #         l1_reg += torch.linalg.norm(data, ord=1)
-        # negative log likelihood of observing data given gaussians with mu=x and sigma=z
         return torch.mean((data - y) ** 2 / (2 * z ** 2) + torch.log(z), dim=-1)
 
     def mean(self, params):
@@ -621,7 +613,7 @@ class AlternatingSkewNLL(ModelObject):
         w_sigma = w[..., 2 * self.num_freqs[0]:2 * self.num_freqs[0] + 2 * self.num_freqs[1]]
         z1 = nn.Tanh()(self.l1_sig(w_sigma))
         z2 = nn.Tanh()(self.l2_sig(z1))
-        z = 1000 * nn.Softplus()(self.l3_sig(z2))  # std should start big to avoid infinite gradients
+        z = 10 * nn.Softplus()(self.l3_sig(z2))  # std should start big to avoid infinite gradients
 
         w_a = w[..., -2 * self.num_freqs[2]:]
         a1 = nn.Tanh()(self.l1_a(w_a))
@@ -632,9 +624,6 @@ class AlternatingSkewNLL(ModelObject):
 
     def forward(self, w, data, training_mask):
         mu, sig, alpha = self.decode(w)
-        # training_mask = torch.zeros(mu.shape)
-        # window_len = mu.shape[0] // self.num_slices
-        # training_mask[range(0, mu.shape[-1], window_len), ...] = 1
         if training_mask is None:
             y = mu
             z = sig
@@ -649,15 +638,71 @@ class AlternatingSkewNLL(ModelObject):
         norm = torch.distributions.normal.Normal(0, 1)
         losses = (-(data - y)**2 / (2 * z**2)) - z.log() + norm.cdf(a * (data - y) / abs(z)).log()
         avg = -torch.mean(losses, dim=-1)
-#         return avg * torch.repeat_interleave(torch.linspace(0.5, 1.5, losses.shape[0])[:, None], avg.shape[-1], 1)
-        return avg
+        return avg * torch.repeat_interleave(torch.linspace(0.5, 1.5, losses.shape[0])[:, None], avg.shape[-1], 1)
 
     def mean(self, params):
         mu, sigma, alpha = params
         delta = alpha / (1 + alpha ** 2) ** 0.5
         return mu + sigma * delta * (2 / np.pi) ** 0.5
 
-    def std(selfs, params):
+    def std(self, params):
         mu, sigma, alpha = params
         delta = alpha / (1 + alpha ** 2) ** 0.5
         return sigma * (1 - 2 * delta ** 2 / np.pi) ** 0.5
+
+
+class AlternatingNormalNLL(ModelObject):
+
+    def __init__(self, x_dim, num_freqs, n):
+        """
+        Negative Log Likelihood neural network assuming Gaussian distribution of x at every point in time.
+        Trains using NLL and trains mu and sigma separately to prevent
+        overfitting
+        :param x_dim: dimension of what will be modeled
+        :param num_freqs: list of the number of frequencies used to model each parameter: [num_mu, num_sigma]
+        :param n: size of 2nd layer of NN
+        :param num_slices: training data will be divided into num_slices slices in time, and they will alternate between
+                           being used to train mu and sigma
+        """
+        super(AlternatingNormalNLL, self).__init__(num_freqs)
+
+        self.l1_mu = nn.Linear(2 * self.num_freqs[0], n)
+        self.l2_mu = nn.Linear(n, 64)
+        self.l3_mu = nn.Linear(64, x_dim)
+
+        self.l1_sig = nn.Linear(2 * self.num_freqs[1], n)
+        self.l2_sig = nn.Linear(n, 64)
+        self.l3_sig = nn.Linear(64, x_dim)
+
+    def decode(self, w):
+        w_mu = w[..., :2 * self.num_freqs[0]]
+        y1 = nn.Tanh()(self.l1_mu(w_mu))
+        y2 = nn.Tanh()(self.l2_mu(y1))
+        y = self.l3_mu(y2)
+
+        w_sigma = w[..., 2 * self.num_freqs[0]:]
+        z1 = nn.Tanh()(self.l1_sig(w_sigma))
+        z2 = nn.Tanh()(self.l2_sig(z1))
+        z = 10 * nn.Softplus()(self.l3_sig(z2))  # start big to avoid infinite gradients
+
+        return y, z
+
+    def forward(self, w, data, training_mask):
+        mu, sig = self.decode(w)
+        if training_mask is None:
+            y = mu
+            z = sig
+        else:
+            y = training_mask * mu + (1 - training_mask) * mu.detach()
+            # z = (1 - training_mask) * sig + training_mask * sig.detach()
+            z = sig
+
+        losses = (data - y) ** 2 / (2 * z ** 2) + torch.log(z)
+        avg = torch.mean(losses, dim=-1)
+        return avg * torch.repeat_interleave(torch.linspace(0.5, 1.5, losses.shape[0])[:, None], avg.shape[-1], 1)
+
+    def mean(self, params):
+        return params[0]
+
+    def std(self, params):
+        return params[1]

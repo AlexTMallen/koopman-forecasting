@@ -22,31 +22,40 @@ def pinball_loss(data, quant_preds, quantiles):
 
 def test(alldata, zone_name, plot=False):
     zone = alldata[zone_name]
-    # 1/1/2005 (first data point) was Saturday, so starts with 5 (Monday is 0)
-    one_week = [5, 6, 0, 1, 2, 3, 4]
-    days_of_week = np.array(list(one_week[(i // 24) % 7] for i in range(len(zone["DEMAND"]))), dtype=np.uint8)
-    slc = 361 * 24
-    cap = 365 * 24
-    demand = np.array(zone["DEMAND"][-(slc + cap):-cap], dtype=np.float64)
-    hour = np.array(zone["Hour"][-(slc + cap):-cap], dtype=np.uint8)
-    week = days_of_week[-(slc + cap):-cap]
-    month = np.array(list(map(lambda x: int(x[5:7]), zone["Date"][-(slc + cap):-cap])), dtype=np.uint8)
-    trend = np.arange(slc)
-    weekhour = week * hour
-    temp = np.array(zone["DryBulb"][-(slc + cap):-cap], dtype=np.float64)
+    days_of_week = np.array(list((i // 24) % 7 for i in range(len(zone["DEMAND"]))), dtype=np.uint8)
+    months_of_year = np.array(list(map(lambda x: int(x[5:7]), zone["Date"])), dtype=np.uint8)
+    hours_of_day = np.array(zone["Hour"], dtype=np.uint8)
+
+    cap = len(zone["DEMAND"]) - 365 * 24
+    demand = np.array(zone["DEMAND"][:cap], dtype=np.float64)
+    hour = np.zeros((23, cap), dtype=np.uint8)
+    for i in range(23):
+        hour[i] = (i == hours_of_day[:cap])
+    week = np.zeros((6, cap), dtype=np.uint8)
+    for i in range(6):
+        week[i] = (i == days_of_week[:cap])
+    month = np.zeros((11, cap), dtype=np.uint8)
+    for i in range(1, 12):
+        month[i - 1] = (i == months_of_year[:cap])
+    trend = np.arange(cap)
+    weekhour = np.zeros((6 * 23, cap))
+    for i in range(6):
+        for j in range(23):
+            weekhour[23 * i + j] = week[i] * hour[j]
+    temp = np.array(zone["DryBulb"][:cap], dtype=np.float64)
     temp2 = temp ** 2
     temp3 = temp ** 3
-    tempmonth = temp * month
-    temp2month = temp2 * month
-    temp3month = temp3 * month
-    temphour = temp * hour
-    temp2hour = temp2 * hour
-    temp3hour = temp3 * hour
+    tempmonth = np.array(list(map(lambda x: temp * x, month)))
+    temp2month = np.array(list(map(lambda x: temp2 * x, month)))
+    temp3month = np.array(list(map(lambda x: temp3 * x, month)))
+    temphour = np.array(list(map(lambda x: temp * x, hour)))
+    temp2hour = np.array(list(map(lambda x: temp2 * x, hour)))
+    temp3hour = np.array(list(map(lambda x: temp3 * x, hour)))
 
     reg = linear_model.LinearRegression()
 
-    variables = [trend, month, week, hour, weekhour, temp, temp2, temp3, tempmonth, temp2month, temp3month,
-                 temphour, temp2hour, temp3hour]
+    variables = [trend, *month, *week, *hour, *weekhour, temp, temp2, temp3, *tempmonth, *temp2month, *temp3month,
+                 *temphour, *temp2hour, *temp3hour]
     variables = list(map(list, zip(*variables)))  # transpose
     reg.fit(variables, demand)
 
@@ -63,11 +72,22 @@ def test(alldata, zone_name, plot=False):
     gap = 52 * 24
     cap = 365 * 24 - slc - gap
     test_demand = np.array(zone["DEMAND"][-(slc + cap):-cap], dtype=np.float64)
-    hour = np.array(zone["Hour"][-(slc + cap):-cap], dtype=np.uint8)
-    week = week = days_of_week[-(slc + cap):-cap]
-    month = np.array(list(map(lambda x: int(x[5:7]), zone["Date"][-(slc + cap):-cap])), dtype=np.uint8)
-    trend = np.arange(slc, slc + len(demand))
+    hour = np.zeros((23, len(test_demand)), dtype=np.uint8)
+    for i in range(23):
+        hour[i] = (i == hours_of_day[-(slc + cap):-cap])
+    week = np.zeros((6, len(test_demand)), dtype=np.uint8)
+    for i in range(6):
+        week[i] = (i == days_of_week[-(slc + cap):-cap])
+    month = np.zeros((11, len(test_demand)), dtype=np.uint8)
+    for i in range(1, 12):
+        month[i - 1] = (i == months_of_year[-(slc + cap):-cap])
 
+    weekhour = np.zeros((6 * 23, len(test_demand)))
+    for i in range(6):
+        for j in range(23):
+            weekhour[23 * i + j] = week[i] * hour[j]
+
+    trend = np.arange(slc, slc + len(demand))
     all_temps = np.array(zone["DryBulb"], dtype=np.float64)
     temps = []
     for year in range(10):
@@ -77,17 +97,16 @@ def test(alldata, zone_name, plot=False):
 
     preds = []
     for temp in temps:
-        weekhour = week * hour
         temp2 = temp ** 2
         temp3 = temp ** 3
-        tempmonth = temp * month
-        temp2month = temp2 * month
-        temp3month = temp3 * month
-        temphour = temp * hour
-        temp2hour = temp2 * hour
-        temp3hour = temp3 * hour
-        test_variables = [trend, month, week, hour, weekhour, temp, temp2, temp3, tempmonth, temp2month, temp3month,
-                          temphour, temp2hour, temp3hour]
+        tempmonth = np.array(list(map(lambda x: temp * x, month)))
+        temp2month = np.array(list(map(lambda x: temp2 * x, month)))
+        temp3month = np.array(list(map(lambda x: temp3 * x, month)))
+        temphour = np.array(list(map(lambda x: temp * x, hour)))
+        temp2hour = np.array(list(map(lambda x: temp2 * x, hour)))
+        temp3hour = np.array(list(map(lambda x: temp3 * x, hour)))
+        test_variables = [trend, *month, *week, *hour, *weekhour, temp, temp2, temp3, *tempmonth, *temp2month, *temp3month,
+                          *temphour, *temp2hour, *temp3hour]
         test_variables = list(map(list, zip(*test_variables)))  # transpose
         preds.append(reg.predict(test_variables))
 
@@ -122,6 +141,7 @@ def get_losses(plot=False):
 
     losses = dict()
     for zone_name in alldata.keys():
+        print(zone_name)
         losses[zone_name] = test(alldata, zone_name, plot=plot)
 
     return losses
