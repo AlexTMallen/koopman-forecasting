@@ -20,17 +20,16 @@ def pinball_loss(data, quant_preds, quantiles):
     return loss / (len(data) * len(quantiles))
 
 
-def test(alldata, zone_name, plot=False):
+def test(alldata, zone_name, all_demand, hours_of_day, all_temps, train_through=None, gap=0, test_through=None, plot=False):
     zone = alldata[zone_name]
-    days_of_week = np.array(list((i // 24) % 7 for i in range(len(zone["DEMAND"]))), dtype=np.uint8)
+    days_of_week = np.array(list((i // 24) % 7 for i in range(len(all_demand))), dtype=np.uint8)
     months_of_year = np.array(list(map(lambda x: int(x[5:7]), zone["Date"])), dtype=np.uint8)
-    hours_of_day = np.array(zone["Hour"], dtype=np.uint8)
 
-    cap = len(zone["DEMAND"]) - 365 * 24
-    demand = np.array(zone["DEMAND"][:cap], dtype=np.float64)
+    cap = train_through
+    demand = all_demand[:cap]
     hour = np.zeros((23, cap), dtype=np.uint8)
-    for i in range(23):
-        hour[i] = (i == hours_of_day[:cap])
+    for i in range(1, 24):
+        hour[i - 1] = (i == hours_of_day[:cap])
     week = np.zeros((6, cap), dtype=np.uint8)
     for i in range(6):
         week[i] = (i == days_of_week[:cap])
@@ -42,7 +41,7 @@ def test(alldata, zone_name, plot=False):
     for i in range(6):
         for j in range(23):
             weekhour[23 * i + j] = week[i] * hour[j]
-    temp = np.array(zone["DryBulb"][:cap], dtype=np.float64)
+    temp = all_temps[:cap]
     temp2 = temp ** 2
     temp3 = temp ** 3
     tempmonth = np.array(list(map(lambda x: temp * x, month)))
@@ -68,19 +67,18 @@ def test(alldata, zone_name, plot=False):
 
 
     #  ###---TEST---###
-    slc = 31 * 24
-    gap = 52 * 24
-    cap = 365 * 24 - slc - gap
-    test_demand = np.array(zone["DEMAND"][-(slc + cap):-cap], dtype=np.float64)
+    slc = test_through
+    cap = train_through + slc + gap
+    test_demand = all_demand[cap - slc:cap]
     hour = np.zeros((23, len(test_demand)), dtype=np.uint8)
     for i in range(23):
-        hour[i] = (i == hours_of_day[-(slc + cap):-cap])
+        hour[i] = (i == hours_of_day[cap - slc:cap])
     week = np.zeros((6, len(test_demand)), dtype=np.uint8)
     for i in range(6):
-        week[i] = (i == days_of_week[-(slc + cap):-cap])
+        week[i] = (i == days_of_week[cap - slc:cap])
     month = np.zeros((11, len(test_demand)), dtype=np.uint8)
     for i in range(1, 12):
-        month[i - 1] = (i == months_of_year[-(slc + cap):-cap])
+        month[i - 1] = (i == months_of_year[cap - slc:cap])
 
     weekhour = np.zeros((6 * 23, len(test_demand)))
     for i in range(6):
@@ -88,7 +86,6 @@ def test(alldata, zone_name, plot=False):
             weekhour[23 * i + j] = week[i] * hour[j]
 
     trend = np.arange(slc, slc + len(demand))
-    all_temps = np.array(zone["DryBulb"], dtype=np.float64)
     temps = []
     for year in range(10):
         for shift in range(9):
@@ -135,18 +132,42 @@ def test(alldata, zone_name, plot=False):
     return pinball_loss(test_demand, quant_preds, quantiles)
 
 
-def get_losses(plot=False):
+def get_lossesGEFCom(plot=False):
     with open("GEFCom2017//GEFCom2017-Qual//GEFCom2017Qual2005-2015.json", "r") as f:
         alldata = json.loads(f.read())
 
     losses = dict()
     for zone_name in alldata.keys():
         print(zone_name)
-        losses[zone_name] = test(alldata, zone_name, plot=plot)
+        hours_of_day = np.array(alldata[zone_name]["Hour"], dtype=np.uint8)
+        demand = np.array(alldata[zone_name]["DEMAND"], dtype=np.float64)
+        all_temps = np.array(alldata[zone_name]["DryBulb"], dtype=np.float64)
+        length = len(demand)
+        losses[zone_name] = test(alldata, zone_name, demand, hours_of_day, all_temps, train_through=length - 365*24, gap=52*24, test_through=31*24, plot=plot)
 
     return losses
 
 
+def get_lossesCOVID(plot=False):
+    """
+    Doesn't work because not enough data for temperature scenarios
+    :param plot:
+    :return:
+    """
+    # with open("GEFCom2017//COVID//COVIDdemandApr2020-2021.json", "r") as f:
+    #     alldata = json.loads(f.read())
+    #
+    # losses = dict()
+    # for zone_name in alldata.keys():
+    #     print(zone_name)
+    #     demand = np.array(alldata[zone_name]["RT_Demand"], dtype=np.float64)
+    #     hours_of_day = np.array(alldata[zone_name]["Hr_End"], dtype=np.uint8)
+    #     all_temps = np.array(alldata[zone_name]["Dry_Bulb"], dtype=np.float64)
+    #     length = len(demand)
+    #     losses[zone_name] = test(alldata, zone_name, demand, hours_of_day, all_temps, train_through=length - 31*24, gap=0, test_through=31*24, plot=plot)
+    #
+    # return losses
+
 if __name__ == "__main__":
-    losses = get_losses(plot=True)
+    losses = get_lossesCOVID(plot=True)
     print(losses)
