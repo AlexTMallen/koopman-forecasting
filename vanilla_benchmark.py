@@ -20,10 +20,8 @@ def pinball_loss(data, quant_preds, quantiles):
     return loss / (len(data) * len(quantiles))
 
 
-def test(alldata, zone_name, all_demand, hours_of_day, all_temps, train_through=None, gap=0, test_through=None, plot=False):
-    zone = alldata[zone_name]
+def test(all_demand, hours_of_day, all_temps, months_of_year, train_through=None, gap=0, test_through=None, plot=False):
     days_of_week = np.array(list((i // 24) % 7 for i in range(len(all_demand))), dtype=np.uint8)
-    months_of_year = np.array(list(map(lambda x: int(x[5:7]), zone["Date"])), dtype=np.uint8)
 
     cap = train_through
     demand = all_demand[:cap]
@@ -41,7 +39,7 @@ def test(alldata, zone_name, all_demand, hours_of_day, all_temps, train_through=
     for i in range(6):
         for j in range(23):
             weekhour[23 * i + j] = week[i] * hour[j]
-    temp = all_temps[:cap]
+    temp = all_temps[-len(all_demand):][:cap]
     temp2 = temp ** 2
     temp3 = temp ** 3
     tempmonth = np.array(list(map(lambda x: temp * x, month)))
@@ -65,7 +63,6 @@ def test(alldata, zone_name, all_demand, hours_of_day, all_temps, train_through=
         plt.plot(fit)
         plt.show()
 
-
     #  ###---TEST---###
     slc = test_through
     cap = train_through + slc + gap
@@ -87,10 +84,10 @@ def test(alldata, zone_name, all_demand, hours_of_day, all_temps, train_through=
 
     trend = np.arange(slc, slc + len(demand))
     temps = []
-    for year in range(10):
-        for shift in range(9):
-            offset = int(year * 365.24 + shift + 0.5) * 24
-            temps.append(all_temps[offset + gap: offset + slc + gap])
+    k = 49
+    for shift in range(2*k + 1):
+        offset = shift * 24
+        temps.append(all_temps[-len(all_demand) - k * 24:][offset + gap: offset + slc + gap])
 
     preds = []
     for temp in temps:
@@ -132,19 +129,24 @@ def test(alldata, zone_name, all_demand, hours_of_day, all_temps, train_through=
     return pinball_loss(test_demand, quant_preds, quantiles)
 
 
-def get_lossesGEFCom(plot=False):
+def get_lossesGEFCom(start=0, zones=None, plot=False):
     with open("GEFCom2017//GEFCom2017-Qual//GEFCom2017Qual2005-2015.json", "r") as f:
         alldata = json.loads(f.read())
 
     losses = dict()
-    for zone_name in alldata.keys():
+    zones = alldata.keys() if zones is None else zones
+    for zone_name in zones:
         print(zone_name)
-        hours_of_day = np.array(alldata[zone_name]["Hour"], dtype=np.uint8)
-        demand = np.array(alldata[zone_name]["DEMAND"], dtype=np.float64)
+        hours_of_day = np.array(alldata[zone_name]["Hour"], dtype=np.uint8)[start:]
+        demand = np.array(alldata[zone_name]["DEMAND"], dtype=np.float64)[start:]
         all_temps = np.array(alldata[zone_name]["DryBulb"], dtype=np.float64)
-        length = len(demand)
-        losses[zone_name] = test(alldata, zone_name, demand, hours_of_day, all_temps, train_through=length - 365*24, gap=52*24, test_through=31*24, plot=plot)
+        print("start:", alldata[zone_name]["Date"][start])
+        months = np.array(list(map(lambda x: int(x[5:7]), alldata[zone_name]["Date"])), dtype=np.uint8)[start:]
 
+        length = len(demand)
+        losses[zone_name] = test(demand, hours_of_day, all_temps, months, train_through=365*24, gap=0, test_through=31*24, plot=plot)
+
+    print(losses)
     return losses
 
 
@@ -169,5 +171,6 @@ def get_lossesCOVID(plot=False):
     # return losses
 
 if __name__ == "__main__":
-    losses = get_lossesCOVID(plot=True)
+    # losses = get_lossesGEFCom(start=9 * 365 * 24 + 2 * 24 + 31 * 24, plot=True)
+    losses = get_lossesGEFCom(start=86896, plot=True, zones=["ISONE CA"])
     print(losses)

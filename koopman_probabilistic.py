@@ -396,7 +396,10 @@ class KoopmanProb(nn.Module):
             losses.append(l)
             if verbose:
                 print('Loss: ', l)
+            elif i % 100 == 10:
+                print(f"Loss at iteration {i}: {l}")
 
+        print("Final loss:", l)
         return losses
 
     def predict(self, T):
