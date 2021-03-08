@@ -326,8 +326,7 @@ class KoopmanProb(nn.Module):
 #                 batch_mask = 1 - batch_mask
             loss = torch.mean(self.model_obj(k, xt_t, batch_mask))
 
-            if loss > 10e9:
-                print("big loss at:", str(i) + ":", loss)
+            losses.append(loss.cpu().detach().numpy())
 
             opt.zero_grad()
             opt_omega.zero_grad()
@@ -336,8 +335,6 @@ class KoopmanProb(nn.Module):
 
             opt.step()
             opt_omega.step()
-
-            losses.append(loss.cpu().detach().numpy())
 
         if verbose:
             print('Setting periods to', 2 * np.pi / omega)
