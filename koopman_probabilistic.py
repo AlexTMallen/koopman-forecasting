@@ -593,12 +593,16 @@ class AlternatingSkewNLL(ModelObject):
         super(AlternatingSkewNLL, self).__init__(num_freqs)
 
         self.l1_mu = nn.Linear(2 * self.num_freqs[0], n)
-        self.l2_mu = nn.Linear(n, 64)
-        self.l3_mu = nn.Linear(64, x_dim)
+        self.l2_mu = nn.Linear(n, n)
+        self.l3_mu = nn.Linear(n, n)
+        self.l4_mu = nn.Linear(n, 64)
+        self.l5_mu = nn.Linear(64, x_dim)
 
         self.l1_sig = nn.Linear(2 * self.num_freqs[1], n)
-        self.l2_sig = nn.Linear(n, 64)
-        self.l3_sig = nn.Linear(64, x_dim)
+        self.l2_sig = nn.Linear(n, n)
+        self.l3_sig = nn.Linear(n, n)
+        self.l4_sig = nn.Linear(n, 64)
+        self.l5_sig = nn.Linear(64, x_dim)
 
         self.l1_a = nn.Linear(2 * self.num_freqs[2], n)
         self.l2_a = nn.Linear(n, 64)
@@ -608,17 +612,21 @@ class AlternatingSkewNLL(ModelObject):
         w_mu = w[..., :2 * self.num_freqs[0]]
         y1 = nn.Tanh()(self.l1_mu(w_mu))
         y2 = nn.Tanh()(self.l2_mu(y1))
-        y = self.l3_mu(y2)
+        y3 = nn.Tanh()(self.l3_mu(y2))
+        y4 = nn.Tanh()(self.l4_mu(y3))
+        y = self.l5_mu(y4)
 
         w_sigma = w[..., 2 * self.num_freqs[0]:2 * self.num_freqs[0] + 2 * self.num_freqs[1]]
         z1 = nn.Tanh()(self.l1_sig(w_sigma))
         z2 = nn.Tanh()(self.l2_sig(z1))
-        z = 10 * nn.Softplus()(self.l3_sig(z2))  # std should start big to avoid infinite gradients
+        z3 = nn.Tanh()(self.l3_sig(z2))
+        z4 = nn.Tanh()(self.l4_sig(z3))
+        z = 10 * nn.Softplus()(self.l5_sig(z4))  # start big to avoid infinite gradients
 
         w_a = w[..., -2 * self.num_freqs[2]:]
         a1 = nn.Tanh()(self.l1_a(w_a))
-        a2 = nn.Tanh()(self.l2_a(y1))
-        a = self.l3_a(y2)
+        a2 = nn.Tanh()(self.l2_a(a1))
+        a = self.l3_a(a2)
 
         return y, z, a
 
@@ -667,23 +675,31 @@ class AlternatingNormalNLL(ModelObject):
         super(AlternatingNormalNLL, self).__init__(num_freqs)
 
         self.l1_mu = nn.Linear(2 * self.num_freqs[0], n)
-        self.l2_mu = nn.Linear(n, 64)
-        self.l3_mu = nn.Linear(64, x_dim)
+        self.l2_mu = nn.Linear(n, n)
+        self.l3_mu = nn.Linear(n, n)
+        self.l4_mu = nn.Linear(n, 64)
+        self.l5_mu = nn.Linear(64, x_dim)
 
         self.l1_sig = nn.Linear(2 * self.num_freqs[1], n)
-        self.l2_sig = nn.Linear(n, 64)
-        self.l3_sig = nn.Linear(64, x_dim)
+        self.l2_sig = nn.Linear(n, n)
+        self.l3_sig = nn.Linear(n, n)
+        self.l4_sig = nn.Linear(n, 64)
+        self.l5_sig = nn.Linear(64, x_dim)
 
     def decode(self, w):
         w_mu = w[..., :2 * self.num_freqs[0]]
         y1 = nn.Tanh()(self.l1_mu(w_mu))
         y2 = nn.Tanh()(self.l2_mu(y1))
-        y = self.l3_mu(y2)
+        y3 = nn.Tanh()(self.l3_mu(y2))
+        y4 = nn.Tanh()(self.l4_mu(y3))
+        y = self.l5_mu(y4)
 
         w_sigma = w[..., 2 * self.num_freqs[0]:]
         z1 = nn.Tanh()(self.l1_sig(w_sigma))
         z2 = nn.Tanh()(self.l2_sig(z1))
-        z = 10 * nn.Softplus()(self.l3_sig(z2))  # start big to avoid infinite gradients
+        z3 = nn.Tanh()(self.l3_sig(z2))
+        z4 = nn.Tanh()(self.l4_sig(z3))
+        z = 10 * nn.Softplus()(self.l5_sig(z4))  # start big to avoid infinite gradients
 
         return y, z
 
