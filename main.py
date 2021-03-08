@@ -1,4 +1,5 @@
 from koopman_probabilistic import *
+from model_objs import *
 import numpy as np
 import numpy.matlib
 import matplotlib.pyplot as plt
@@ -51,7 +52,7 @@ def koopman_main():
 
     # k.fit(xt, iterations=20, interval=10, verbose=False, cutoff=0, weight_decay=1e-10000, lr_theta=5e-4, lr_omega=0,
     #       num_slices=None)
-    k.fit(xt, iterations=5, interval=10, verbose=True, cutoff=0, weight_decay=1e-10000, lr_theta=1e-5, lr_omega=0,
+    k.fit(xt, iterations=200, interval=10, verbose=True, cutoff=0, weight_decay=1e-10000, lr_theta=1e-4, lr_omega=0,
           num_slices=None)
 
     ### FORECAST ###
@@ -69,8 +70,8 @@ def koopman_main():
     # plt.scatter(np.arange(-slc), x[slc:], label="data")
     plt.plot(x[:predict_through, dim], label="data")
     plt.plot(mean_hat[:, dim], label="Koopman mean", linewidth=1)
-    plt.plot(mean_hat[:, dim] + std_hat[:, dim], "--", color="black", label="Koopman mean $\pm$ std", linewidth=0.5)
-    plt.plot(mean_hat[:, dim] - std_hat[:, dim], "--", color="black", linewidth=0.5)
+    # plt.plot(mean_hat[:, dim] + std_hat[:, dim], "--", color="black", label="Koopman mean $\pm$ std", linewidth=0.5)
+    # plt.plot(mean_hat[:, dim] - std_hat[:, dim], "--", color="black", linewidth=0.5)
     # plt.plot(a_hat[:, dim], color="red", linewidth=0.3, label="Koopman $\\alpha$")
     # plt.plot(std_hat[:, dim], color="green", linewidth=0.7, label="Koopman std")
 
