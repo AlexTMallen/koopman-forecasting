@@ -48,6 +48,8 @@ class KoopmanProb(nn.Module):
                        condition: num_fourier_modes <= min(num_freqs)
                        default = 0
 
+    loss_weights: torch.tensor of shape (xt.shape[0],) that represents how to weight the losses over time.
+                  default=None
     '''
 
     def __init__(self, model_obj, sample_num=12, seed=None, **kwargs):
@@ -77,6 +79,7 @@ class KoopmanProb(nn.Module):
         self.parallel_batch_size = kwargs['parallel_batch_size'] if 'parallel_batch_size' in kwargs else 1000
         self.num_fourier_modes = kwargs['num_fourier_modes'] if 'num_fourier_modes' in kwargs else 0
         self.batch_size = kwargs['batch_size'] if 'batch_size' in kwargs else 32
+        self.loss_weights = kwargs['loss_weights'] if 'loss_weights' in kwargs else None
 
         # Initial guesses for frequencies
         self.omegas = torch.linspace(0.01, 0.5, self.total_freqs, device=self.device)
@@ -248,18 +251,15 @@ class KoopmanProb(nn.Module):
 
             j += 1
 
-        # plt.plot(E[-1])
-        # plt.show()
-        #
         # plt.plot(omegas, E)
         # plt.title(f"omega {i}")
         # plt.xlabel("frequency (periods per time)")
         # plt.ylabel("loss")
         # plt.show()
-        #
-        # return E, E_ft
 
-    def sgd(self, xt, iteration, weight_decay=0, verbose=False, lr_theta=1e-5, lr_omega=1e-5, num_slices=None):
+        return E, E_ft
+
+    def sgd(self, xt, weight_decay=0, verbose=False, lr_theta=1e-5, lr_omega=1e-5, num_slices=None):
         '''
 
         sgd performs a single epoch of stochastic gradient descent on parameters
@@ -305,11 +305,6 @@ class KoopmanProb(nn.Module):
 
         losses = []
 
-        # for i in range(len(t) // batch_size + 1):
-        #     if i == len(t) // batch_size:  # remainder data with batch smaller than batch_size
-        #         ts = t[-(len(t) % batch_size):]
-        #     else:
-        #         ts = t[i * batch_size:(i + 1) * batch_size]
         for i in range(len(t) // batch_size):
 
             opt.zero_grad()
@@ -326,9 +321,13 @@ class KoopmanProb(nn.Module):
 
             k = torch.cat([torch.cos(wt), torch.sin(wt)], -1)
             batch_mask = training_mask[i * batch_size:(i + 1) * batch_size] if training_mask is not None else None
-#             if batch_mask is not None and i % 2 == 1:
-#                 batch_mask = 1 - batch_mask
-            loss = torch.mean(self.model_obj(k, xt_t, batch_mask))
+
+            batch_losses = self.model_obj(k, xt_t, batch_mask)
+            if self.loss_weights is not None:
+                weighted_losses = batch_losses * self.loss_weights[i * batch_size:(i + 1) * batch_size]
+                loss = torch.mean(weighted_losses)
+            else:
+                loss = torch.mean(batch_losses)
 
             loss.backward()
 
@@ -390,12 +389,15 @@ class KoopmanProb(nn.Module):
                 print('Iteration ', i)
                 print(2 * np.pi / self.omegas)
 
-            l = self.sgd(xt, i, weight_decay=weight_decay, verbose=verbose, lr_theta=lr_theta, lr_omega=lr_omega, num_slices=num_slices)
+            l = self.sgd(xt, weight_decay=weight_decay, verbose=verbose, lr_theta=lr_theta, lr_omega=lr_omega, num_slices=num_slices)
             losses.append(l)
             if verbose:
                 print('Loss: ', l)
-            elif i % 100 == 10:
+            elif i % 50 == 10:
                 print(f"Loss at iteration {i}: {l}")
+
+            if not np.isfinite(l):
+                break
 
         print("Final loss:", l)
         return losses

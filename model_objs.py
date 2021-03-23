@@ -173,8 +173,8 @@ class AlternatingSkewNLL(ModelObject):
         super(AlternatingSkewNLL, self).__init__(num_freqs)
 
         self.l1_mu = nn.Linear(2 * self.num_freqs[0], n)
-        self.l2_mu = nn.Linear(n, 32)
-        self.l3_mu = nn.Linear(32, x_dim)
+        self.l2_mu = nn.Linear(n, 64)
+        self.l3_mu = nn.Linear(64, x_dim)
 
         self.l1_sig = nn.Linear(2 * self.num_freqs[1], n)
         self.l2_sig = nn.Linear(n, 64)
@@ -220,7 +220,7 @@ class AlternatingSkewNLL(ModelObject):
         norm = torch.distributions.normal.Normal(0, 1)
         losses = (-(data - y)**2 / (2 * z**2)) - z.log() + norm.cdf(a * (data - y) / abs(z)).log()
         avg = -torch.mean(losses, dim=-1)
-        return avg * torch.repeat_interleave(torch.linspace(0.5, 1.5, losses.shape[0])[:, None], avg.shape[-1], 1)
+        return avg
 
     def mean(self, params):
         mu, sigma, alpha = params
@@ -266,7 +266,7 @@ class AlternatingNormalNLL(ModelObject):
         w_sigma = w[..., self.param_idxs[1]]
         z1 = nn.Tanh()(self.l1_sig(w_sigma))
         z2 = nn.Tanh()(self.l2_sig(z1))
-        z = 10 * nn.Softplus()(self.l3_sig(z2))  # start big to avoid infinite gradients
+        z = 1000 * nn.Softplus()(self.l3_sig(z2))  # start big to avoid infinite gradients
 
         return y, z
 

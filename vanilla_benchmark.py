@@ -68,8 +68,8 @@ def test(all_demand, hours_of_day, all_temps, months_of_year, train_through=None
     cap = train_through + slc + gap
     test_demand = all_demand[cap - slc:cap]
     hour = np.zeros((23, len(test_demand)), dtype=np.uint8)
-    for i in range(23):
-        hour[i] = (i == hours_of_day[cap - slc:cap])
+    for i in range(1, 24):
+        hour[i - 1] = (i == hours_of_day[cap - slc:cap])
     week = np.zeros((6, len(test_demand)), dtype=np.uint8)
     for i in range(6):
         week[i] = (i == days_of_week[cap - slc:cap])
@@ -84,10 +84,13 @@ def test(all_demand, hours_of_day, all_temps, months_of_year, train_through=None
 
     trend = np.arange(slc, slc + len(demand))
     temps = []
-    k = 49
-    for shift in range(2*k + 1):
-        offset = shift * 24
-        temps.append(all_temps[-len(all_demand) - k * 24:][offset + gap: offset + slc + gap])
+    num_years = train_through / (24 * 365.24)
+    k = int((99 / num_years - 1) / 2 + 0.5)
+    print("k =", k)
+    for yr in range(int(num_years + 0.5)):
+        for shift in range(2*k + 1):
+            offset = int((shift + int(yr * 365.24 + 0.5)) * 24 + 0.5)
+            temps.append(all_temps[-len(all_demand) - k * 24:][offset + gap: offset + slc + gap])
 
     preds = []
     for temp in temps:
@@ -129,7 +132,7 @@ def test(all_demand, hours_of_day, all_temps, months_of_year, train_through=None
     return pinball_loss(test_demand, quant_preds, quantiles)
 
 
-def get_lossesGEFCom(start=0, zones=None, plot=False):
+def get_lossesGEFCom(start=0, zones=None, plot=False, train_through=365*24, delay=0):
     with open("GEFCom2017//GEFCom2017-Qual//GEFCom2017Qual2005-2015.json", "r") as f:
         alldata = json.loads(f.read())
 
@@ -139,38 +142,21 @@ def get_lossesGEFCom(start=0, zones=None, plot=False):
         print(zone_name)
         hours_of_day = np.array(alldata[zone_name]["Hour"], dtype=np.uint8)[start:]
         demand = np.array(alldata[zone_name]["DEMAND"], dtype=np.float64)[start:]
-        all_temps = np.array(alldata[zone_name]["DryBulb"], dtype=np.float64)
+        all_temps = np.array(alldata[zone_name]["DryBulb"], dtype=np.float64)[start % (365 * 24):]
+        if start == 0:
+            prefix = np.tile(all_temps[:24], 4)
+            all_temps = np.concatenate([prefix, all_temps])
         print("start:", alldata[zone_name]["Date"][start])
         months = np.array(list(map(lambda x: int(x[5:7]), alldata[zone_name]["Date"])), dtype=np.uint8)[start:]
 
         length = len(demand)
-        losses[zone_name] = test(demand, hours_of_day, all_temps, months, train_through=365*24, gap=0, test_through=31*24, plot=plot)
+        losses[zone_name] = test(demand, hours_of_day, all_temps, months, train_through=train_through, gap=delay, test_through=31*24, plot=plot)
 
     print(losses)
     return losses
 
 
-def get_lossesCOVID(plot=False):
-    """
-    Doesn't work because not enough data for temperature scenarios
-    :param plot:
-    :return:
-    """
-    # with open("GEFCom2017//COVID//COVIDdemandApr2020-2021.json", "r") as f:
-    #     alldata = json.loads(f.read())
-    #
-    # losses = dict()
-    # for zone_name in alldata.keys():
-    #     print(zone_name)
-    #     demand = np.array(alldata[zone_name]["RT_Demand"], dtype=np.float64)
-    #     hours_of_day = np.array(alldata[zone_name]["Hr_End"], dtype=np.uint8)
-    #     all_temps = np.array(alldata[zone_name]["Dry_Bulb"], dtype=np.float64)
-    #     length = len(demand)
-    #     losses[zone_name] = test(alldata, zone_name, demand, hours_of_day, all_temps, train_through=length - 31*24, gap=0, test_through=31*24, plot=plot)
-    #
-    # return losses
-
 if __name__ == "__main__":
     # losses = get_lossesGEFCom(start=9 * 365 * 24 + 2 * 24 + 31 * 24, plot=True)
-    losses = get_lossesGEFCom(start=86896, plot=True, zones=["ISONE CA"])
+    losses = get_lossesGEFCom(start=int(9 * 24 * 365 / 12), delay=52 * 24,  train_through=(10 * 365 + 2) * 24, zones=["ISONE CA"], plot=True)
     print(losses)
