@@ -88,6 +88,7 @@ def test(all_df, train_start, train_through, test_length, gap=0, temp_years=None
     preds = []
     for i, temp in enumerate(temps):
         test_vars = variables.iloc[start:cap].copy()
+        # test_vars.trend = variables.trend.iloc[train_start:train_start + len(test_vars)].values  # this helps
 
         test_vars.loc[:, "temp"] = temp
         test_vars.loc[:, "temp2"] = temp ** 2
@@ -159,6 +160,6 @@ def get_lossesGEFCom(train_through_years, test_length, zones=None, start_date=No
 
 if __name__ == "__main__":
     # losses = get_lossesGEFCom(start=9 * 365 * 24 + 2 * 24 + 31 * 24, plot=True)
-    losses = get_lossesGEFCom(10, 31 * 24, start_date=pd.Timestamp("2005-10-01"), zones=["ISONE CA"],
-                              delay_days=0, temp_years=[2014], plot=True)
+    losses = get_lossesGEFCom(10, 31 * 24, start_date=pd.Timestamp("2005-11-01"), zones=["ISONE CA"],
+                              delay_days=0, temp_years=np.arange(2005, 2015), plot=False)
     print(losses)
