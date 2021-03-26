@@ -305,12 +305,16 @@ class KoopmanProb(nn.Module):
 
         losses = []
 
-        for i in range(len(t) // batch_size):
+        idxs = np.arange(len(t))
+        np.random.shuffle(idxs)
+        batches = idxs[:len(t) // batch_size * batch_size].reshape((len(t) // batch_size, batch_size))
+
+        for i in range(len(batches)):
 
             opt.zero_grad()
             opt_omega.zero_grad()
 
-            ts = t[i * batch_size:(i + 1) * batch_size]
+            ts = t[batches[i]]
 
             o = torch.unsqueeze(omega, 0)
             ts_ = torch.unsqueeze(ts, -1).type(torch.get_default_dtype()) + 1
@@ -320,11 +324,11 @@ class KoopmanProb(nn.Module):
             wt = ts_ * o
 
             k = torch.cat([torch.cos(wt), torch.sin(wt)], -1)
-            batch_mask = training_mask[i * batch_size:(i + 1) * batch_size] if training_mask is not None else None
+            batch_mask = training_mask[batches[i]] if training_mask is not None else None
 
             batch_losses = self.model_obj(k, xt_t, batch_mask)
             if self.loss_weights is not None:
-                weighted_losses = batch_losses * self.loss_weights[i * batch_size:(i + 1) * batch_size]
+                weighted_losses = batch_losses * self.loss_weights[batches[i]]
                 loss = torch.mean(weighted_losses)
             else:
                 loss = torch.mean(batch_losses)
