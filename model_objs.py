@@ -222,7 +222,7 @@ class AlternatingSkewNLL(ModelObject):
     def _norm_logcdf(self, z):
 
         if (z < -7).any():  # these result in NaNs otherwise
-            print("USING LOG CDF APPROXIMATION FOR THIS BATCH TO AVOID FLOATING POINT ERRORS\n\n\n")
+            print("THIS BATCH USING LOG CDF APPROXIMATION (large z-score can otherwise cause numerical instability)")
             # https://stats.stackexchange.com/questions/106003/approximation-of-logarithm-of-standard-normal-cdf-for-x0/107548#107548?newreg=5e5f6365aa7046aba1c447e8ae263fec
             # I found this approx to be good: less than 0.04 error for all -20 < x < -5
             # approx = lambda x: -0.5 * x ** 2 - 4.8 + 2509 * (x - 13) / ((x - 40) ** 2 * (x - 5))
