@@ -1,10 +1,24 @@
-from koopman_probabilistic import *
-from model_objs import *
+import random
+import torch
 import numpy as np
 import numpy.matlib
 import matplotlib.pyplot as plt
 import json
 from datetime import datetime
+
+seed = 633
+print("[ Using Seed : ", seed, " ]")
+torch.manual_seed(seed)
+torch.cuda.manual_seed_all(seed)
+torch.cuda.manual_seed(seed)
+numpy.random.seed(seed)
+random.seed(seed)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+
+from koopman_probabilistic import *
+from model_objs import *
+
 
 def koopman_main():
     # seed = np.random.randint(1000)
@@ -34,9 +48,11 @@ def koopman_main():
     x = data[train_start:]
     x = x[:predict_through]
     xt = x[:train_through]
+    mask = torch.ones(xt.shape, dtype=torch.uint8)
+    mask[:1000] = 0
 
     now = ("_".join(str(datetime.now()).split())).replace(":", ".")
-    data_name = "EXPnormality_" + f"_train_start={train_start}_" + now
+    data_name = "main_" + f"_train_start={train_start}_" + now
 
     num_freqs = [5, 5, 5]
     num_fourier = 4
@@ -55,8 +71,8 @@ def koopman_main():
 
     # k.fit(xt, iterations=20, interval=10, verbose=False, cutoff=0, weight_decay=1e-10000, lr_theta=5e-4, lr_omega=0,
     #       num_slices=None)
-    k.fit(xt, iterations=50, interval=10, verbose=True, cutoff=1, weight_decay=0, lr_theta=1e-4, lr_omega=0,
-          num_slices=None)
+    k.fit(xt, iterations=150, interval=10, verbose=True, cutoff=0, weight_decay=0, lr_theta=1e-4, lr_omega=0,
+          training_mask=mask)
 
     ### FORECAST ###
     params = k.predict(predict_through)

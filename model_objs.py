@@ -143,7 +143,7 @@ class SkewNLL(ModelObject):
     def forward(self, w, data, training_mask):
         y, z, a = self.decode(w)
         norm = torch.distributions.normal.Normal(0, 1)
-        return -torch.mean((-(data - y) ** 2 / (2 * z ** 2)) - z.log() + norm.cdf(a * (data - y) / abs(z)).log(),
+        return -torch.mean((-(data - y) ** 2 / (2 * z ** 2)) - z.log() + norm.cdf(a * (data - y) / z).log(),
                            dim=-1)
 
     def mean(self, params):
@@ -162,13 +162,11 @@ class AlternatingSkewNLL(ModelObject):
     def __init__(self, x_dim, num_freqs, n):
         """
         neural network that takes a vector of sines and cosines and produces a skew-normal distribution with parameters
-        mu, sigma, and alpha (the outputs of the NN). trains using NLL and trains mu and sigma separately to prevent
-        overfitting
+        mu, sigma, and alpha (the outputs of the NN). trains using NLL. reserves some of the training data to only train
+        sigma and alpha to mitigate overconfidence
         :param x_dim: number of dimensions spanned by the probability distr
         :param num_freqs: list. number of frequencies used for each of the 3 parameters: [num_mu, num_sig, num_alpha]
         :param n: size of NN's second layer
-        :param num_slices: training data will be divided into num_slices slices in time, and they will alternate between
-                           being used to train mu and sigma/alpha
         """
         super(AlternatingSkewNLL, self).__init__(num_freqs)
 
@@ -184,6 +182,8 @@ class AlternatingSkewNLL(ModelObject):
         self.l2_a = nn.Linear(n, 32)
         self.l3_a = nn.Linear(32, x_dim)
 
+        self.norm = torch.distributions.normal.Normal(0, 1)
+
     def decode(self, w):
         w_mu = w[..., self.param_idxs[0]]
         y1 = nn.Tanh()(self.l1_mu(w_mu))
@@ -193,7 +193,7 @@ class AlternatingSkewNLL(ModelObject):
         w_sigma = w[..., 2 * self.num_freqs[0]:2 * self.num_freqs[0] + 2 * self.num_freqs[1]]
         z1 = nn.Tanh()(self.l1_sig(w_sigma))
         z2 = nn.Tanh()(self.l2_sig(z1))
-        z = 10 * nn.Softplus()(self.l3_sig(z2))  # std should start big to avoid infinite gradients
+        z = 10 * nn.Softplus()(self.l3_sig(z2))  # start with large uncertainty to avoid small probabilities
 
         w_a = w[..., -2 * self.num_freqs[2]:]
         a1 = nn.Tanh()(self.l1_a(w_a))
@@ -215,12 +215,23 @@ class AlternatingSkewNLL(ModelObject):
             z = sig
             a = alpha
 
-        # avg = torch.mean((data - y) ** 2, dim=-1)
-        # return avg
-        norm = torch.distributions.normal.Normal(0, 1)
-        losses = (-(data - y)**2 / (2 * z**2)) - z.log() + norm.cdf(a * (data - y) / abs(z)).log()
-        avg = -torch.mean(losses, dim=-1)
+        losses = (data - y)**2 / (2 * z**2) + z.log() - self._norm_logcdf(a * (data - y) / z)
+        avg = torch.mean(losses, dim=-1)
         return avg
+
+    def _norm_logcdf(self, z):
+
+        if (z < -7).any():  # these result in NaNs otherwise
+            print("USING LOG CDF APPROXIMATION FOR THIS BATCH TO AVOID FLOATING POINT ERRORS\n\n\n")
+            # https://stats.stackexchange.com/questions/106003/approximation-of-logarithm-of-standard-normal-cdf-for-x0/107548#107548?newreg=5e5f6365aa7046aba1c447e8ae263fec
+            # I found this approx to be good: less than 0.04 error for all -20 < x < -5
+            # approx = lambda x: -0.5 * x ** 2 - 4.8 + 2509 * (x - 13) / ((x - 40) ** 2 * (x - 5))
+            ans = torch.where(z < -0.1, -0.5 * z ** 2 - 4.8 + 2509 * (z - 13) / ((z - 40) ** 2 * (z - 5)),
+                                        -torch.exp(-z * 2) / 2 - torch.exp(-(z - 0.2) ** 2) * 0.2)
+        else:
+            ans = self.norm.cdf(z).log()
+
+        return ans
 
     def mean(self, params):
         mu, sigma, alpha = params

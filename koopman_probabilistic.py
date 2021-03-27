@@ -259,7 +259,7 @@ class KoopmanProb(nn.Module):
 
         return E, E_ft
 
-    def sgd(self, xt, weight_decay=0, verbose=False, lr_theta=1e-5, lr_omega=1e-5, num_slices=None):
+    def sgd(self, xt, weight_decay=0, verbose=False, lr_theta=1e-5, lr_omega=1e-5, training_mask=None):
         '''
 
         sgd performs a single epoch of stochastic gradient descent on parameters
@@ -293,21 +293,12 @@ class KoopmanProb(nn.Module):
         T = xt.shape[0]
         t = torch.arange(T, device=self.device)
 
-        training_mask = None
-        if num_slices is not None:
-            slice_width = T // num_slices
-            training_mask = torch.zeros(T, device=self.device)
-            for slc in range(num_slices):
-#                 if slc % 2 == iteration % 2:
-                if slc % num_slices != 0:
-                    training_mask[slc * slice_width: (slc + 1) * slice_width] = 1
-            print("training_mask:", training_mask[::slice_width // 2], training_mask.shape)
-
         losses = []
 
-        idxs = np.arange(len(t))
+        # create random batches
+        idxs = np.arange(T)
         np.random.shuffle(idxs)
-        batches = idxs[:len(t) // batch_size * batch_size].reshape((len(t) // batch_size, batch_size))
+        batches = idxs[:T // batch_size * batch_size].reshape((T // batch_size, batch_size))
 
         for i in range(len(batches)):
 
@@ -347,7 +338,8 @@ class KoopmanProb(nn.Module):
 
         return np.mean(losses)
 
-    def fit(self, xt, iterations=10, interval=5, cutoff=np.inf, weight_decay=0, verbose=False, lr_theta=1e-5, lr_omega=1e-5, num_slices=None):
+    def fit(self, xt, iterations=10, interval=5, cutoff=np.inf, weight_decay=0, verbose=False, lr_theta=1e-5,
+            lr_omega=1e-5, training_mask=None):
         '''
         Given a dataset, this function alternatingly optimizes omega and
         parameters of f. Specifically, the algorithm performs interval many
@@ -369,7 +361,11 @@ class KoopmanProb(nn.Module):
         weight_decay : TYPE float, regularization parameter
         lr_theta : TYPE float, learning rate for the model object
         lr_omega : TYPE float, learning rate for adjusting omegas
-        num_slices : TYPE int, number of slices into which training data should be divided to prevent overfitting
+        training_mask : TYPE torch.tensor, which training data points should be
+                        using in optimizing the location parameter (eg. mu).
+                        shape should match xt. a 1 indicates to train mu on that data,
+                        a 0 indicates not to.
+                        Default: None (equivalent to torch.ones(xt.shape))
 
         Returns
         -------
@@ -393,7 +389,8 @@ class KoopmanProb(nn.Module):
                 print('Iteration ', i)
                 print(2 * np.pi / self.omegas)
 
-            l = self.sgd(xt, weight_decay=weight_decay, verbose=verbose, lr_theta=lr_theta, lr_omega=lr_omega, num_slices=num_slices)
+            l = self.sgd(xt, weight_decay=weight_decay, verbose=verbose, lr_theta=lr_theta, lr_omega=lr_omega,
+                         training_mask=training_mask)
             losses.append(l)
             if verbose:
                 print('Loss: ', l)
