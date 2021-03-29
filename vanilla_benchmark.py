@@ -72,10 +72,11 @@ def test(all_df, train_start, train_through, test_length, gap=0, temp_years=None
     k = int((99 / num_years - 1) / 2 + 0.5)
     print("k =", k)
     for yr in years:
-        this_year = all_df.iloc[:train_through][all_df.year.iloc[:train_through] == yr]
+        this_year = all_df[all_df.year == yr]
         for shift in range(-k, k + 1):
             delta = pd.Timedelta(days=shift)
             dates = all_df.date.iloc[start:cap] + delta
+            dates = list(date.replace(year=1999) for date in dates)  # 1999 to avoid leap years
             test_days_of_year = np.unique(list(date.timetuple().tm_yday for date in dates))
             include = list(day in test_days_of_year for day in this_year.day_of_year)
             temps.append(this_year.temp[include].values)
@@ -131,7 +132,7 @@ def test(all_df, train_start, train_through, test_length, gap=0, temp_years=None
 
 
 def get_lossesGEFCom(train_through_years, test_length, zones=None, start_date=None, delay_days=0, temp_years=None, plot=False):
-    with open("GEFCom2017//GEFCom2017-Qual//GEFCom2017Qual2005-2015.json", "r") as f:
+    with open("GEFCom2017//GEFCom2017-Qual//GEFCom2017QualAll.json", "r") as f:
         alldata = json.loads(f.read())
 
     losses = dict()
@@ -160,6 +161,8 @@ def get_lossesGEFCom(train_through_years, test_length, zones=None, start_date=No
 
 if __name__ == "__main__":
     # losses = get_lossesGEFCom(start=9 * 365 * 24 + 2 * 24 + 31 * 24, plot=True)
-    losses = get_lossesGEFCom(10, 31 * 24, start_date=pd.Timestamp("2005-11-01"), zones=["ISONE CA"],
-                              delay_days=0, temp_years=np.arange(2005, 2015), plot=False)
+    # losses = get_lossesGEFCom(10, 31 * 24, start_date=pd.Timestamp("2005-11-01"), zones=["ISONE CA"],
+    #                           delay_days=0, temp_years=np.arange(2005, 2015), plot=False)
+    losses = get_lossesGEFCom(11, 31 * 24, start_date=pd.Timestamp('2006-3-10 00:00:00'), zones=["ISONE CA"],
+                                              delay_days=52, temp_years=np.arange(2006, 2017), plot=True)
     print(losses)
