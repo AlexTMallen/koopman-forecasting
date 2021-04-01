@@ -81,7 +81,7 @@ def test(all_df, train_start, train_through, test_length, gap=0, plot=False):
             shift = year_shift + day_shift
             temp_scenario = all_df.temp.iloc[start + shift:cap + shift].values
             if start + shift > start or cap + shift > start:
-                print("using data from testing set")  # nono that can happen if k > year
+                print("using data from testing set")  # can happen if k > year
             temps.append(temp_scenario)
 
 
