@@ -9,6 +9,7 @@ recoverGaussian.ipynb
 #data
 GEFCom2014/*
 GEFCom2017/*
+atmo_chem/*
 
 # images and media
 *.png
@@ -16,6 +17,7 @@ GEFCom2017/*
 *.pptx
 figures/*
 research/*
+experiments/*
 
 # pycharm files
 .idea/*
