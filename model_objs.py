@@ -215,15 +215,6 @@ class GammaNLL(ModelObject):
         self.l2_a = nn.Linear(n, 64)
         self.l3_a = nn.Linear(64, x_dim)
 
-    def forward(self, w, data, training_mask=None):
-        assert (training_mask is None), "Training masks won't help when using a Gamma distribution"
-
-        rate, a = self.decode(w)
-
-        losses = -torch.distributions.gamma.Gamma(a, rate).log_prob(data)
-        avg = torch.mean(losses, dim=-1)
-        return avg
-
     def decode(self, w):
         w_rate = w[..., self.param_idxs[0]]
         rate1 = nn.Tanh()(self.l1_rate(w_rate))
@@ -236,6 +227,14 @@ class GammaNLL(ModelObject):
         a = nn.Softplus()(self.l3_a(a2))
 
         return rate, a
+
+    def forward(self, w, data, training_mask=None):
+        assert (training_mask is None), "Training masks won't help when using a Gamma distribution"
+        rate, a = self.decode(w)
+
+        losses = -torch.distributions.gamma.Gamma(a, rate).log_prob(data)
+        avg = torch.mean(losses, dim=-1)
+        return avg
 
     def mean(self, params):
         return params[1] / params[0]
