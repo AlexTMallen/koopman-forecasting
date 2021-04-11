@@ -85,12 +85,12 @@ class AlternatingSkewNLL(ModelObject):
         y2 = nn.Tanh()(self.l2_mu(y1))
         y = self.l3_mu(y2)
 
-        w_sigma = w[..., 2 * self.num_freqs[0]:2 * self.num_freqs[0] + 2 * self.num_freqs[1]]
+        w_sigma = w[..., self.param_idxs[1]]
         z1 = nn.Tanh()(self.l1_sig(w_sigma))
         z2 = nn.Tanh()(self.l2_sig(z1))
         z = 10 * nn.Softplus()(self.l3_sig(z2))  # start with large uncertainty to avoid small probabilities
 
-        w_a = w[..., -2 * self.num_freqs[2]:]
+        w_a = w[..., self.param_idxs[2]]
         a1 = nn.Tanh()(self.l1_a(w_a))
         a2 = nn.Tanh()(self.l2_a(a1))
         a = self.l3_a(a2)
@@ -221,7 +221,7 @@ class GammaNLL(ModelObject):
         rate2 = nn.Tanh()(self.l2_rate(rate1))
         rate = 1 / nn.Softplus()(self.l3_rate(rate2))  # helps convergence
 
-        w_a = w[..., 2 * self.num_freqs[0]:2 * self.num_freqs[0] + 2 * self.num_freqs[1]]
+        w_a = w[..., self.param_idxs[1]]
         a1 = nn.Tanh()(self.l1_a(w_a))
         a2 = nn.Tanh()(self.l2_a(a1))
         a = nn.Softplus()(self.l3_a(a2))
