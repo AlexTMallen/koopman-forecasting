@@ -52,7 +52,7 @@ class ModelObject(nn.Module):
         return np.ones(params[0].shape)
 
 
-class AlternatingSkewNLL(ModelObject):
+class SkewNormalNLL(ModelObject):
 
     def __init__(self, x_dim, num_freqs, n):
         """
@@ -63,7 +63,7 @@ class AlternatingSkewNLL(ModelObject):
         :param num_freqs: list. number of frequencies used for each of the 3 parameters: [num_mu, num_sig, num_alpha]
         :param n: size of NN's second layer
         """
-        super(AlternatingSkewNLL, self).__init__(num_freqs)
+        super(SkewNormalNLL, self).__init__(num_freqs)
 
         self.l1_mu = nn.Linear(2 * self.num_freqs[0], n)
         self.l2_mu = nn.Linear(n, 64)
@@ -139,9 +139,9 @@ class AlternatingSkewNLL(ModelObject):
         return sigma * (1 - 2 * delta ** 2 / np.pi) ** 0.5
 
 
-class AlternatingNormalNLL(ModelObject):
+class NormalNLL(ModelObject):
 
-    def __init__(self, x_dim, num_freqs, n):
+    def __init__(self, x_dim, num_freqs, n=128):
         """
         Negative Log Likelihood neural network assuming Gaussian distribution of x at every point in time.
         Trains using NLL and trains mu and sigma separately to prevent
@@ -150,7 +150,7 @@ class AlternatingNormalNLL(ModelObject):
         :param num_freqs: list of the number of frequencies used to model each parameter: [num_mu, num_sigma]
         :param n: size of 2nd layer of NN
         """
-        super(AlternatingNormalNLL, self).__init__(num_freqs)
+        super(NormalNLL, self).__init__(num_freqs)
 
         self.l1_mu = nn.Linear(2 * self.num_freqs[0], n)
         self.l2_mu = nn.Linear(n, n)
@@ -170,7 +170,7 @@ class AlternatingNormalNLL(ModelObject):
         w_sigma = w[..., self.param_idxs[1]]
         z1 = nn.Tanh()(self.l1_sig(w_sigma))
         z2 = nn.Tanh()(self.l2_sig(z1))
-        z = 1000 * nn.Softplus()(self.l3_sig(z2))  # start big to avoid infinite gradients
+        z = 10 * nn.Softplus()(self.l3_sig(z2))  # start big to avoid infinite gradients
 
         return y, z
 
