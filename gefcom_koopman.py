@@ -405,14 +405,16 @@ class GEFComKoopman(nn.Module):
         print("Final loss:", l)
         return losses
 
-    def predict(self, T, temp):
+    def predict(self, T, temp, start=0):
         '''
-        Predicts the data from 1 to T.
+        Predicts the data from 0 to T.
 
         Parameters
         ----------
         T : TYPE int
             Prediction horizon
+
+        temp: temperature values to use to predict demand
 
         Returns
         -------
@@ -421,7 +423,7 @@ class GEFComKoopman(nn.Module):
 
         '''
 
-        t = torch.arange(T, device=self.device) + 1
+        t = torch.arange(start, T, device=self.device) + 1
         ts_ = torch.unsqueeze(t, -1).type(torch.get_default_dtype())
         tt = torch.tensor(temp, device=self.device, dtype=torch.get_default_dtype())
         time = ts_ / ts_.max()

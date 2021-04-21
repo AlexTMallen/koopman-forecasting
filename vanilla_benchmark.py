@@ -132,7 +132,7 @@ def test(all_df, train_start, train_through, test_length, gap=0, plot=False):
         sorted_preds = np.sort(preds[:, t])
         quant_pred = []
         for q in quantiles:
-            idx = int(q * preds.shape[0] + 0.5)
+            idx = int(q * preds.shape[0])
             quant_pred.append(sorted_preds[idx])
         quant_preds.append(quant_pred)
 
