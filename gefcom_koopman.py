@@ -17,7 +17,7 @@ from scipy.ndimage import gaussian_filter
 import matplotlib.pyplot as plt
 
 
-class KoopmanProb(nn.Module):
+class GEFComKoopman(nn.Module):
     r'''
 
     model_obj: an object that specifies the function f and how to optimize
@@ -54,7 +54,7 @@ class KoopmanProb(nn.Module):
 
     def __init__(self, model_obj, sample_num=12, seed=None, **kwargs):
 
-        super(KoopmanProb, self).__init__()
+        super(GEFComKoopman, self).__init__()
         self.total_freqs = model_obj.total_freqs
         self.num_freqs = model_obj.num_freqs
 
@@ -95,12 +95,14 @@ class KoopmanProb(nn.Module):
 
         :param xt: the data to initialize fourier modes with
         :param hard_code: specifically define the periods you wish to preset the model with in a list
-                          pre condition: len(hard_code) < self.num_fourier_modes
+                          pre condition: len(hard_code) == self.num_fourier_modes
         :return: omegas found
         """
-        hard_coded_omegas = 2 * np.pi / torch.tensor(hard_code) if hard_code is not None else None
+        best_omegas = None
+        if hard_code is not None:
+            best_omegas = 2 * np.pi / torch.tensor(hard_code)
         
-        if self.num_fourier_modes > 0:
+        elif self.num_fourier_modes > 0:
             xt_ft = np.fft.fft(np.reshape(xt, xt.size))
             adj_xt_ft = abs(xt_ft) + abs(np.flip(xt_ft))
             freqs = np.fft.fftfreq(len(xt_ft))
@@ -116,9 +118,6 @@ class KoopmanProb(nn.Module):
                 i += 1
 
             best_omegas = 2 * np.pi * torch.tensor(best_omegas)
-            if hard_coded_omegas is not None:
-                # set the last omegas to the hard-coded ones
-                best_omegas[-len(hard_coded_omegas):] = hard_coded_omegas
             print("fourier periods:", 2 * np.pi / best_omegas)
 
         if best_omegas is not None:
@@ -260,7 +259,7 @@ class KoopmanProb(nn.Module):
 
         return E, E_ft
 
-    def sgd(self, xt, weight_decay=0, verbose=False, lr_theta=1e-5, lr_omega=1e-5, training_mask=None):
+    def sgd(self, xt, tt, weight_decay=0, verbose=False, lr_theta=1e-5, lr_omega=1e-5, training_mask=None):
         '''
 
         sgd performs a single epoch of stochastic gradient descent on parameters
@@ -310,12 +309,14 @@ class KoopmanProb(nn.Module):
 
             o = torch.unsqueeze(omega, 0)
             ts_ = torch.unsqueeze(ts, -1).type(torch.get_default_dtype()) + 1
+            time = ts_ / ts_.max()
 
             xt_t = torch.tensor(xt[ts.cpu().numpy(), :], device=self.device)
+            tt_t = torch.tensor(tt[ts.cpu().numpy(), :], device=self.device, dtype=torch.get_default_dtype())
 
             wt = ts_ * o
 
-            k = torch.cat([torch.cos(wt), torch.sin(wt)], -1)
+            k = torch.cat([torch.cos(wt), torch.sin(wt), tt_t, time], -1)
             batch_mask = training_mask[batches[i]] if training_mask is not None else None
 
             batch_losses = self.model_obj(k, xt_t, batch_mask)
@@ -339,7 +340,7 @@ class KoopmanProb(nn.Module):
 
         return np.mean(losses)
 
-    def fit(self, xt, iterations=10, interval=5, cutoff=np.inf, weight_decay=0, verbose=False, lr_theta=1e-5,
+    def fit(self, xt, tt, iterations=10, interval=5, cutoff=np.inf, weight_decay=0, verbose=False, lr_theta=1e-5,
             lr_omega=1e-5, training_mask=None):
         '''
         Given a dataset, this function alternatingly optimizes omega and
@@ -390,7 +391,7 @@ class KoopmanProb(nn.Module):
                 print('Iteration ', i)
                 print(2 * np.pi / self.omegas)
 
-            l = self.sgd(xt, weight_decay=weight_decay, verbose=verbose, lr_theta=lr_theta, lr_omega=lr_omega,
+            l = self.sgd(xt, tt, weight_decay=weight_decay, verbose=verbose, lr_theta=lr_theta, lr_omega=lr_omega,
                          training_mask=training_mask)
             losses.append(l)
             if verbose:
@@ -404,14 +405,16 @@ class KoopmanProb(nn.Module):
         print("Final loss:", l)
         return losses
 
-    def predict(self, T):
+    def predict(self, T, temp, start=0):
         '''
-        Predicts the data from 1 to T.
+        Predicts the data from 0 to T.
 
         Parameters
         ----------
         T : TYPE int
             Prediction horizon
+
+        temp: temperature values to use to predict demand
 
         Returns
         -------
@@ -420,11 +423,13 @@ class KoopmanProb(nn.Module):
 
         '''
 
-        t = torch.arange(T, device=self.device) + 1
+        t = torch.arange(start, T, device=self.device) + 1
         ts_ = torch.unsqueeze(t, -1).type(torch.get_default_dtype())
+        tt = torch.tensor(temp, device=self.device, dtype=torch.get_default_dtype())
+        time = ts_ / ts_.max()
 
         o = torch.unsqueeze(self.omegas, 0)
-        k = torch.cat([torch.cos(ts_ * o), torch.sin(ts_ * o)], -1)
+        k = torch.cat([torch.cos(ts_ * o), torch.sin(ts_ * o), tt, time], -1)
 
         if self.multi_gpu:
             params = self.model_obj.module.decode(k)

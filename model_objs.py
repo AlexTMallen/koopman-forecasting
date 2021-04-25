@@ -52,6 +52,92 @@ class ModelObject(nn.Module):
         return np.ones(params[0].shape)
 
 
+class GEFComSkewNLL(ModelObject):
+    def __init__(self, x_dim, num_freqs, n):
+        """
+        neural network that takes a vector of sines and cosines and produces a skew-normal distribution with parameters
+        mu, sigma, and alpha (the outputs of the NN). trains using NLL. reserves some of the training data to only train
+        sigma and alpha to mitigate overconfidence
+        :param x_dim: number of dimensions spanned by the probability distr
+        :param num_freqs: list. number of frequencies used for each of the 3 parameters: [num_mu, num_sig, num_alpha]
+        :param n: size of NN's second layer
+        """
+        super(GEFComSkewNLL, self).__init__(num_freqs)
+
+        self.l1_mu = nn.Linear(2 * self.num_freqs[0] + 2, n)
+        self.l2_mu = nn.Linear(n, 64)
+        self.l3_mu = nn.Linear(64, x_dim)
+
+        self.l1_sig = nn.Linear(2 * self.num_freqs[1] + 2, n)
+        self.l2_sig = nn.Linear(n, 64)
+        self.l3_sig = nn.Linear(64, x_dim)
+
+        self.l1_a = nn.Linear(2 * self.num_freqs[2] + 2, n)
+        self.l2_a = nn.Linear(n, 32)
+        self.l3_a = nn.Linear(32, x_dim)
+
+        self.norm = torch.distributions.normal.Normal(0, 1)
+
+    def decode(self, w):
+        w_mu = w[..., (*self.param_idxs[0], -2, -1)]
+        y1 = nn.Tanh()(self.l1_mu(w_mu))
+        y2 = nn.Tanh()(self.l2_mu(y1))
+        y = self.l3_mu(y2)
+
+        w_sigma = w[..., (*self.param_idxs[1], -2, -1)]
+        z1 = nn.Tanh()(self.l1_sig(w_sigma))
+        z2 = nn.Tanh()(self.l2_sig(z1))
+        z = 10 * nn.Softplus()(self.l3_sig(z2))  # start with large uncertainty to avoid small probabilities
+
+        w_a = w[..., (*self.param_idxs[2], -2, -1)]
+        a1 = nn.Tanh()(self.l1_a(w_a))
+        a2 = nn.Tanh()(self.l2_a(a1))
+        a = self.l3_a(a2)
+
+        return y, z, a
+
+    def forward(self, w, data, training_mask=None):
+        mu, sig, alpha = self.decode(w)
+        if training_mask is None:
+            y = mu
+            z = sig
+            a = alpha
+        else:
+            y = training_mask * mu + (1 - training_mask) * mu.detach()
+            # z = (1 - training_mask) * sig + training_mask * sig.detach()
+            # a = (1 - training_mask) * alpha + training_mask * alpha.detach()
+            z = sig
+            a = alpha
+
+        losses = (data - y)**2 / (2 * z**2) + z.log() - self._norm_logcdf(a * (data - y) / z)
+        avg = torch.mean(losses, dim=-1)
+        return avg
+
+    def _norm_logcdf(self, z):
+
+        if (z < -7).any():  # these result in NaNs otherwise
+            print("THIS BATCH USING LOG CDF APPROXIMATION (large z-score can otherwise cause numerical instability)")
+            # https://stats.stackexchange.com/questions/106003/approximation-of-logarithm-of-standard-normal-cdf-for-x0/107548#107548?newreg=5e5f6365aa7046aba1c447e8ae263fec
+            # I found this approx to be good: less than 0.04 error for all -20 < x < -5
+            # approx = lambda x: -0.5 * x ** 2 - 4.8 + 2509 * (x - 13) / ((x - 40) ** 2 * (x - 5))
+            ans = torch.where(z < -0.1, -0.5 * z ** 2 - 4.8 + 2509 * (z - 13) / ((z - 40) ** 2 * (z - 5)),
+                                        -torch.exp(-z * 2) / 2 - torch.exp(-(z - 0.2) ** 2) * 0.2)
+        else:
+            ans = self.norm.cdf(z).log()
+
+        return ans
+
+    def mean(self, params):
+        mu, sigma, alpha = params
+        delta = alpha / (1 + alpha ** 2) ** 0.5
+        return mu + sigma * delta * (2 / np.pi) ** 0.5
+
+    def std(self, params):
+        mu, sigma, alpha = params
+        delta = alpha / (1 + alpha ** 2) ** 0.5
+        return sigma * (1 - 2 * delta ** 2 / np.pi) ** 0.5
+
+
 class SkewNormalNLL(ModelObject):
 
     def __init__(self, x_dim, num_freqs, n):
@@ -117,7 +203,7 @@ class SkewNormalNLL(ModelObject):
     def _norm_logcdf(self, z):
 
         if (z < -7).any():  # these result in NaNs otherwise
-            print("THIS BATCH USING LOG CDF APPROXIMATION (large z-score can otherwise cause numerical instability)")
+            # print("THIS BATCH USING LOG CDF APPROXIMATION (large z-score can otherwise cause numerical instability)")
             # https://stats.stackexchange.com/questions/106003/approximation-of-logarithm-of-standard-normal-cdf-for-x0/107548#107548?newreg=5e5f6365aa7046aba1c447e8ae263fec
             # I found this approx to be good: less than 0.04 error for all -20 < x < -5
             # approx = lambda x: -0.5 * x ** 2 - 4.8 + 2509 * (x - 13) / ((x - 40) ** 2 * (x - 5))
