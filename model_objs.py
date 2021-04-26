@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 import numpy as np
+from scipy.special import factorial
 
 class ModelObject(nn.Module):
 
@@ -281,6 +282,79 @@ class NormalNLL(ModelObject):
         return params[1]
 
 
+class ConwayMaxwellPoissonNLL(ModelObject):
+
+    def __init__(self, x_dim, num_freqs, n, terms=20):
+        """
+        Negative Log Likelihood neural network assuming Conway Maxwell Poisson distribution of x at every point in time.
+        This is a generalization of the discrete Poisson distribution. Trains using NLL.
+        :param x_dim: dimension of what will be modeled
+        :param num_freqs: list of the number of frequencies used to model each parameter: [num_rate, num_a]
+        :param n: size of 2nd layer of NN
+        """
+        super(ConwayMaxwellPoissonNLL, self).__init__(num_freqs)
+
+        self.l1_rate = nn.Linear(2 * self.num_freqs[0], n)
+        self.l2_rate= nn.Linear(n, 64)
+        self.l3_rate = nn.Linear(64, x_dim)
+
+        self.l1_v = nn.Linear(2 * self.num_freqs[1], n)
+        self.l2_v = nn.Linear(n, 64)
+        self.l3_v = nn.Linear(64, x_dim)
+
+        self.terms = terms
+
+    def decode(self, w):
+        w_rate = w[..., self.param_idxs[0]]
+        rate1 = nn.Tanh()(self.l1_rate(w_rate))
+        rate2 = nn.Tanh()(self.l2_rate(rate1))
+        rate = 1 / nn.Softplus()(self.l3_rate(rate2))  # helps convergence
+
+        w_v = w[..., self.param_idxs[1]]
+        v1 = nn.Tanh()(self.l1_v(w_v))
+        v2 = nn.Tanh()(self.l2_v(v1))
+        v = nn.Softplus()(self.l3_v(v2))
+
+        return rate, v
+
+    def forward(self, w, data, training_mask=None):
+        assert (training_mask is None), "Training masks won't help when using a CMP distribution"
+        rate, v = self.decode(w)
+
+        losses = -self._logCMPpmf(data, rate, v)
+        avg = torch.mean(losses, dim=-1)
+        return avg
+
+    def _Z(self, rate, v):
+        j = torch.arange(self.terms)
+        return torch.sum(rate**j / (factorial(j)**v))
+
+    def _logCMPpmf(self, x, rate, v):
+        return x * torch.log(rate) - v * x.apply_(self._log_factorial) - torch.log(self._Z(rate, v))
+
+    def _log_factorial(self, x):
+        # log(x(x-1)(x-2)...(2)(1)) = log(x) + log(x-1) + ... + log(2) + log(1)
+        # the hard part is vectorizing it, therefore it only takes scalar inputs
+        return torch.sum(torch.log(torch.arange(1, x + 1)))
+
+    def mean(self, params, num_terms=100):
+        rate = params[0]
+        v = params[1]
+        terms = np.array([x * rate**x / (factorial(x)**v * self._npZ(rate, v)) for x in range(num_terms)])
+        return np.sum(terms)
+
+    def std(self, params, num_terms=100):
+        rate = params[0]
+        v = params[1]
+        terms = np.array([x**2 * rate ** x / (factorial(x) ** v * self._npZ(rate, v)) for x in range(num_terms)])
+        var = np.sum(terms) - self.mean(params, num_terms=num_terms)**2
+        return np.sqrt(var)
+
+    def _npZ(self, rate, v):
+        j = np.arange(100)
+        return np.sum(rate ** j / (factorial(j) ** v))
+
+
 class GammaNLL(ModelObject):
 
     def __init__(self, x_dim, num_freqs, n):
@@ -327,3 +401,45 @@ class GammaNLL(ModelObject):
 
     def std(self, params):
         return np.sqrt(params[1] / params[0] ** 2)
+
+
+class PoissonNLL(ModelObject):
+
+    def __init__(self, x_dim, num_freqs, n):
+        """
+        Negative Log Likelihood neural network assuming Poisson distribution of x at every point in time.
+        Trains using NLL
+        :param x_dim: dimension of what will be modeled
+        :param num_freqs: list of the number of frequencies used to model each parameter: [num_rate,]
+        :param n: size of 2nd layer of NN
+        """
+        super(PoissonNLL, self).__init__(num_freqs)
+
+        self.l1_rate = nn.Linear(2 * self.num_freqs[0], n)
+        self.l2_rate = nn.Linear(n, 64)
+        self.l3_rate = nn.Linear(64, x_dim)
+
+    def decode(self, w):
+        w_rate = w[..., self.param_idxs[0]]
+        rate1 = nn.Tanh()(self.l1_rate(w_rate))
+        rate2 = nn.Tanh()(self.l2_rate(rate1))
+        rate = 1 / nn.Softplus()(self.l3_rate(rate2))  # helps convergence
+
+        return rate,
+
+    def forward(self, w, data, training_mask=None):
+        assert (training_mask is None), "Poisson distributions don't support training masks"
+        rate, = self.decode(w)
+
+        losses = -torch.distributions.poisson.Poisson(rate).log_prob(data)
+        avg = torch.mean(losses, dim=-1)
+        return avg
+
+    def mean(self, params):
+        return params[0]
+
+    def std(self, params):
+        return np.sqrt(params[0])
+
+
+
