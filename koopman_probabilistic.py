@@ -88,18 +88,21 @@ class KoopmanProb(nn.Module):
         self.model_obj = nn.DataParallel(model_obj, device_ids=kwargs['device']) if multi_gpu else model_obj
         self.sample_num = sample_num
 
-    def find_fourier_omegas(self, xt, hard_code=None):
+    def find_fourier_omegas(self, xt, tt=None, hard_code=None):
         """
         computes the fft of the data to "hard-code" self.num_fourier_modes values of omega that
         will remain constant through optimization
 
-        :param xt: the data to initialize fourier modes with
+        :param xt: the data to initialize fourier modes with. Data samples must be equally spaced
         :param hard_code: specifically define the periods you wish to preset the model with in a list
                           pre condition: len(hard_code) < self.num_fourier_modes
         :return: omegas found
         """
         hard_coded_omegas = 2 * np.pi / torch.tensor(hard_code) if hard_code is not None else None
-        
+        assert(tt is None or not (hard_code is not None and len(hard_code) < self.num_fourier_modes),
+               "Fourier frequencies of non uniform samples is not yet implemented")
+
+        best_omegas = None
         if self.num_fourier_modes > 0:
             xt_ft = np.fft.fft(np.reshape(xt, xt.size))
             adj_xt_ft = abs(xt_ft) + abs(np.flip(xt_ft))
@@ -128,7 +131,7 @@ class KoopmanProb(nn.Module):
                 idx += num_freqs
         return best_omegas
 
-    def sample_error(self, xt, which):
+    def sample_error(self, xt, which, tt=None):
         '''
 
         sample_error computes all temporally local losses within the first
@@ -148,7 +151,6 @@ class KoopmanProb(nn.Module):
             dimensions: [T, sample_num]
 
         '''
-
         if type(xt) == np.ndarray:
             xt = torch.tensor(xt, device=self.device)
 
@@ -201,7 +203,7 @@ class KoopmanProb(nn.Module):
 
         return E, E_ft
 
-    def fft(self, xt, i, verbose=False):
+    def fft(self, xt, i, tt=None, verbose=False):
         '''
 
         fft first samples all temporaly local losses within the first period
@@ -214,13 +216,18 @@ class KoopmanProb(nn.Module):
             Index of the entry of omega
         verbose : TYPE boolean, optional
             DESCRIPTION. The default is False.
+        tt : TYPE numpy.array
+            the times of measurement of xt
         Returns
         -------
         E : TYPE numpy.array
             Global loss surface in time domain.
         E_ft : TYPE
             Global loss surface in frequency domain.
+
         '''
+        assert (tt is None), "Not yet implemented for non-uniform samples"  # TODO
+
 
         E, E_ft = self.reconstruct(self.sample_error(xt, i))
         omegas = np.linspace(0, 0.5, len(E))
@@ -260,7 +267,7 @@ class KoopmanProb(nn.Module):
 
         return E, E_ft
 
-    def sgd(self, xt, weight_decay=0, verbose=False, lr_theta=1e-5, lr_omega=1e-5, training_mask=None):
+    def sgd(self, xt, tt=None, weight_decay=0, verbose=False, lr_theta=1e-5, lr_omega=1e-5, training_mask=None):
         '''
 
         sgd performs a single epoch of stochastic gradient descent on parameters
@@ -270,6 +277,8 @@ class KoopmanProb(nn.Module):
         ----------
         xt : TYPE numpy.array
             Temporal data whose first dimension is time.
+        tt : TYPE numpy.array
+            the times of measurement of xt
         verbose : TYPE boolean, optionally
             The default is False.
 
@@ -291,8 +300,7 @@ class KoopmanProb(nn.Module):
         opt = optim.SGD(self.model_obj.parameters(), lr=lr_theta, weight_decay=weight_decay)
         opt_omega = optim.SGD([omega], lr=lr_omega / T)
 
-        T = xt.shape[0]
-        t = torch.arange(T, device=self.device)
+        t = torch.arange(T, device=self.device) if tt is None else torch.tensor(tt, device=self.device)
 
         losses = []
 
@@ -311,7 +319,7 @@ class KoopmanProb(nn.Module):
             o = torch.unsqueeze(omega, 0)
             ts_ = torch.unsqueeze(ts, -1).type(torch.get_default_dtype()) + 1
 
-            xt_t = torch.tensor(xt[ts.cpu().numpy(), :], device=self.device)
+            xt_t = torch.tensor(xt[batches[i], :], device=self.device)
 
             wt = ts_ * o
 
@@ -339,7 +347,7 @@ class KoopmanProb(nn.Module):
 
         return np.mean(losses)
 
-    def fit(self, xt, iterations=10, interval=5, cutoff=np.inf, weight_decay=0, verbose=False, lr_theta=1e-5,
+    def fit(self, xt, tt=None, iterations=10, interval=5, cutoff=np.inf, weight_decay=0, verbose=False, lr_theta=1e-5,
             lr_omega=1e-5, training_mask=None):
         '''
         Given a dataset, this function alternatingly optimizes omega and
@@ -349,8 +357,10 @@ class KoopmanProb(nn.Module):
 
         Parameters
         ----------
-        xt : TYPE numpy.array
+        xt : TYPE 2D numpy.array
             Temporal data whose first dimension is time.
+        tt : TYPE 1D numpy.array of shape (xt.shape[0],)
+            the times of measurement of xt. Default None, which assumes tt is uniform
         iterations : TYPE int, optional
             Total number of SGD epochs. The default is 10.
         interval : TYPE, optional
@@ -376,6 +386,7 @@ class KoopmanProb(nn.Module):
 
         assert (len(xt.shape) > 1), 'Input data needs to be at least 2D'
 
+        l = None
         losses = []
         for i in range(iterations):
 
@@ -383,14 +394,14 @@ class KoopmanProb(nn.Module):
                 param_num = 0  # only update omegas that are note the first self.num_fourier_modes idxs of each param
                 for num_freqs in self.num_freqs:
                     for k in range(param_num + self.num_fourier_modes, param_num + num_freqs):
-                        self.fft(xt, k, verbose=verbose)
+                        self.fft(xt, k, tt=tt, verbose=verbose)
                     param_num += num_freqs
 
             if verbose:
                 print('Iteration ', i)
                 print(2 * np.pi / self.omegas)
 
-            l = self.sgd(xt, weight_decay=weight_decay, verbose=verbose, lr_theta=lr_theta, lr_omega=lr_omega,
+            l = self.sgd(xt, tt=tt, weight_decay=weight_decay, verbose=verbose, lr_theta=lr_theta, lr_omega=lr_omega,
                          training_mask=training_mask)
             losses.append(l)
             if verbose:
@@ -412,6 +423,8 @@ class KoopmanProb(nn.Module):
         ----------
         T : TYPE int
             Prediction horizon
+            TYPE numpy.ndarray
+            Exact times for which to predict, 1D array
 
         Returns
         -------
@@ -420,7 +433,7 @@ class KoopmanProb(nn.Module):
 
         '''
 
-        t = torch.arange(T, device=self.device) + 1
+        t = torch.arange(T, device=self.device) + 1 if isinstance(T, int) else torch.tensor(T, device=self.device)
         ts_ = torch.unsqueeze(t, -1).type(torch.get_default_dtype())
 
         o = torch.unsqueeze(self.omegas, 0)
