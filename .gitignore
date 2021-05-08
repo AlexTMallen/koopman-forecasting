@@ -16,6 +16,7 @@ flu/*
 *.png
 *.jpg
 *.pptx
+*.mp4
 figures/*
 research/*
 experiments/*
