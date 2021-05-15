@@ -50,6 +50,7 @@ class KoopmanProb(nn.Module):
 
     loss_weights: torch.tensor of shape (xt.shape[0],) that represents how to weight the losses over time.
                   default=None
+
     '''
 
     def __init__(self, model_obj, sample_num=12, seed=None, **kwargs):
@@ -81,6 +82,7 @@ class KoopmanProb(nn.Module):
         self.batch_size = kwargs['batch_size'] if 'batch_size' in kwargs else 32
         self.loss_weights = kwargs['loss_weights'] if 'loss_weights' in kwargs else None
 
+        self.max_t = 1
         # Initial guesses for frequencies
         self.omegas = torch.linspace(0.01, 0.5, self.total_freqs, device=self.device)
 
@@ -99,8 +101,8 @@ class KoopmanProb(nn.Module):
         :return: omegas found
         """
         hard_coded_omegas = 2 * np.pi / torch.tensor(hard_code) if hard_code is not None else None
-        assert(tt is None or not (hard_code is not None and len(hard_code) < self.num_fourier_modes),
-               "Fourier frequencies of non uniform samples is not yet implemented")
+        assert (tt is None or not (hard_code is not None and len(hard_code) < self.num_fourier_modes)), \
+            "Fourier frequencies of non uniform samples is not yet implemented"
 
         best_omegas = None
         if self.num_fourier_modes > 0:
@@ -323,7 +325,7 @@ class KoopmanProb(nn.Module):
 
             wt = ts_ * o
 
-            k = torch.cat([torch.cos(wt), torch.sin(wt)], -1)
+            k = torch.cat([torch.cos(wt), torch.sin(wt), ts_ / self.max_t], -1)
             batch_mask = training_mask[batches[i]] if training_mask is not None else None
 
             batch_losses = self.model_obj(k, xt_t, batch_mask)
@@ -386,6 +388,7 @@ class KoopmanProb(nn.Module):
 
         assert (len(xt.shape) > 1), 'Input data needs to be at least 2D'
 
+        self.max_t = tt.max() if tt is not None else xt.shape[0]
         l = None
         losses = []
         for i in range(iterations):
@@ -437,7 +440,7 @@ class KoopmanProb(nn.Module):
         ts_ = torch.unsqueeze(t, -1).type(torch.get_default_dtype())
 
         o = torch.unsqueeze(self.omegas, 0)
-        k = torch.cat([torch.cos(ts_ * o), torch.sin(ts_ * o)], -1)
+        k = torch.cat([torch.cos(ts_ * o), torch.sin(ts_ * o), ts_ / self.max_t], -1)
 
         if self.multi_gpu:
             params = self.model_obj.module.decode(k)

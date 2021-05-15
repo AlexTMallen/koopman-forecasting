@@ -21,7 +21,6 @@ from koopman_probabilistic import *
 from gefcom_koopman import *
 from model_objs import *
 
-
 def koopman_main():
     # seed = np.random.randint(1000)
     # np.random.seed(seed)

@@ -309,14 +309,13 @@ class GEFComKoopman(nn.Module):
 
             o = torch.unsqueeze(omega, 0)
             ts_ = torch.unsqueeze(ts, -1).type(torch.get_default_dtype()) + 1
-            time = ts_ / ts_.max()
 
             xt_t = torch.tensor(xt[ts.cpu().numpy(), :], device=self.device)
             tt_t = torch.tensor(tt[ts.cpu().numpy(), :], device=self.device, dtype=torch.get_default_dtype())
 
             wt = ts_ * o
 
-            k = torch.cat([torch.cos(wt), torch.sin(wt), tt_t, time], -1)
+            k = torch.cat([torch.cos(wt), torch.sin(wt), tt_t, ts_], -1)
             batch_mask = training_mask[batches[i]] if training_mask is not None else None
 
             batch_losses = self.model_obj(k, xt_t, batch_mask)
