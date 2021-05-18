@@ -64,32 +64,32 @@ class GEFComSkewNLL(ModelObject):
         """
         super(GEFComSkewNLL, self).__init__(num_freqs)
 
-        self.l1_mu = nn.Linear(2 * self.num_freqs[0] + 2, n)
+        self.l1_mu = nn.Linear(2 * self.num_freqs[0] + 1, n)
         self.l2_mu = nn.Linear(n, 64)
         self.l3_mu = nn.Linear(64, x_dim)
 
-        self.l1_sig = nn.Linear(2 * self.num_freqs[1] + 2, n)
+        self.l1_sig = nn.Linear(2 * self.num_freqs[1] + 1, n)
         self.l2_sig = nn.Linear(n, 64)
         self.l3_sig = nn.Linear(64, x_dim)
 
-        self.l1_a = nn.Linear(2 * self.num_freqs[2] + 2, n)
+        self.l1_a = nn.Linear(2 * self.num_freqs[2] + 1, n)
         self.l2_a = nn.Linear(n, 32)
         self.l3_a = nn.Linear(32, x_dim)
 
         self.norm = torch.distributions.normal.Normal(0, 1)
 
     def decode(self, w):
-        w_mu = w[..., (*self.param_idxs[0], -2, -1)]
+        w_mu = w[..., (*self.param_idxs[0], -1)]
         y1 = nn.Tanh()(self.l1_mu(w_mu))
         y2 = nn.Tanh()(self.l2_mu(y1))
         y = self.l3_mu(y2)
 
-        w_sigma = w[..., (*self.param_idxs[1], -2, -1)]
+        w_sigma = w[..., (*self.param_idxs[1], -1)]
         z1 = nn.Tanh()(self.l1_sig(w_sigma))
         z2 = nn.Tanh()(self.l2_sig(z1))
         z = 10 * nn.Softplus()(self.l3_sig(z2))  # start with large uncertainty to avoid small probabilities
 
-        w_a = w[..., (*self.param_idxs[2], -2, -1)]
+        w_a = w[..., (*self.param_idxs[2], -1)]
         a1 = nn.Tanh()(self.l1_a(w_a))
         a2 = nn.Tanh()(self.l2_a(a1))
         a = self.l3_a(a2)
@@ -312,7 +312,7 @@ class SkewNormalNLL(ModelObject):
 
 class NormalNLL(ModelObject):
 
-    def __init__(self, x_dim, num_freqs, n=128):
+    def __init__(self, x_dim, num_freqs, n=128, n2=64):
         """
         Negative Log Likelihood neural network assuming Gaussian distribution of x at every point in time.
         Trains using NLL and trains mu and sigma separately to prevent
@@ -325,12 +325,12 @@ class NormalNLL(ModelObject):
 
         self.l1_mu = nn.Linear(2 * self.num_freqs[0], n)
         self.l2_mu = nn.Linear(n, n)
-        self.l2_mu = nn.Linear(n, 64)
-        self.l3_mu = nn.Linear(64, x_dim)
+        self.l2_mu = nn.Linear(n, n2)
+        self.l3_mu = nn.Linear(n2, x_dim)
 
         self.l1_sig = nn.Linear(2 * self.num_freqs[1], n)
-        self.l2_sig = nn.Linear(n, 64)
-        self.l3_sig = nn.Linear(64, x_dim)
+        self.l2_sig = nn.Linear(n, n2)
+        self.l3_sig = nn.Linear(n2, x_dim)
 
     def decode(self, w):
         w_mu = w[..., self.param_idxs[0]]

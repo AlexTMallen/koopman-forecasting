@@ -81,6 +81,7 @@ class GEFComKoopman(nn.Module):
         self.batch_size = kwargs['batch_size'] if 'batch_size' in kwargs else 32
         self.loss_weights = kwargs['loss_weights'] if 'loss_weights' in kwargs else None
 
+        self.max_t = 1
         # Initial guesses for frequencies
         self.omegas = torch.linspace(0.01, 0.5, self.total_freqs, device=self.device)
 
@@ -315,7 +316,7 @@ class GEFComKoopman(nn.Module):
 
             wt = ts_ * o
 
-            k = torch.cat([torch.cos(wt), torch.sin(wt), tt_t, ts_], -1)
+            k = torch.cat([torch.cos(ts_ * o), torch.sin(ts_ * o), tt_t], -1)
             batch_mask = training_mask[batches[i]] if training_mask is not None else None
 
             batch_losses = self.model_obj(k, xt_t, batch_mask)
@@ -376,6 +377,8 @@ class GEFComKoopman(nn.Module):
 
         assert (len(xt.shape) > 1), 'Input data needs to be at least 2D'
 
+        self.max_t = tt.max() if tt is not None else xt.shape[0]
+        l = None
         losses = []
         for i in range(iterations):
 
@@ -425,10 +428,9 @@ class GEFComKoopman(nn.Module):
         t = torch.arange(start, T, device=self.device) + 1
         ts_ = torch.unsqueeze(t, -1).type(torch.get_default_dtype())
         tt = torch.tensor(temp, device=self.device, dtype=torch.get_default_dtype())
-        time = ts_ / ts_.max()
 
         o = torch.unsqueeze(self.omegas, 0)
-        k = torch.cat([torch.cos(ts_ * o), torch.sin(ts_ * o), tt, time], -1)
+        k = torch.cat([torch.cos(ts_ * o), torch.sin(ts_ * o), tt], -1)
 
         if self.multi_gpu:
             params = self.model_obj.module.decode(k)

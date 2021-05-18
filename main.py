@@ -96,7 +96,7 @@ def koopman_main():
 
     # k.fit(xt, iterations=20, interval=10, verbose=False, cutoff=0, weight_decay=1e-10000, lr_theta=5e-4, lr_omega=0,
     #       num_slices=None)
-    k.fit(xt, tt, iterations=30, interval=10, verbose=True, cutoff=0, weight_decay=1e-4, lr_theta=1e-4, lr_omega=0,
+    k.fit(xt, tt, iterations=10, interval=10, verbose=True, cutoff=0, weight_decay=1e-4, lr_theta=1e-4, lr_omega=0,
           training_mask=mask)
 
     ### FORECAST ###
