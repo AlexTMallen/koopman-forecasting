@@ -324,7 +324,6 @@ class NormalNLL(ModelObject):
         super(NormalNLL, self).__init__(num_freqs)
 
         self.l1_mu = nn.Linear(2 * self.num_freqs[0], n)
-        self.l2_mu = nn.Linear(n, n)
         self.l2_mu = nn.Linear(n, n2)
         self.l3_mu = nn.Linear(n2, x_dim)
 

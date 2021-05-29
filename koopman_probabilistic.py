@@ -106,9 +106,9 @@ class KoopmanProb(nn.Module):
 
         best_omegas = None
         if self.num_fourier_modes > 0:
-            xt_ft = np.fft.fft(np.reshape(xt, xt.size))
-            adj_xt_ft = abs(xt_ft) + abs(np.flip(xt_ft))
-            freqs = np.fft.fftfreq(len(xt_ft))
+            xt_ft = np.fft.fft(xt, axis=0)
+            adj_xt_ft = (abs(xt_ft) + abs(np.flip(xt_ft))).reshape(xt_ft.size)
+            freqs = np.tile(np.fft.fftfreq(len(xt_ft)), xt.shape[1])
 
             best_omegas = np.zeros(self.num_fourier_modes)
             i = 0

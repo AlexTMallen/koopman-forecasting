@@ -424,7 +424,7 @@ class GEFComKoopman(nn.Module):
             xhat from 0 to T.
 
         '''
-
+        # time array
         t = torch.arange(start, T, device=self.device) + 1
         ts_ = torch.unsqueeze(t, -1).type(torch.get_default_dtype())
         tt = torch.tensor(temp, device=self.device, dtype=torch.get_default_dtype())
