@@ -5,12 +5,16 @@ a variety of quasi-periodic phenomena from  electricity demand to neural
 activity.
 
 ## Dependencies
+The following are dependencies of the DPK framework:
 - torch
 - numpy
-- pandas
 - scipy
+
+While these are used in the experiments for the paper:
+- pandas
+- sklearn
 - matplotlib
-- jupyter (for experiments)
+- jupyter
 - allensdk (optional—only install this if you wish to work with the
   neuroscience data)
 
@@ -30,8 +34,7 @@ Energy Forecasting Competition 2017 at the qualifying task.
    provide a 1D array of these times).
 2. Input the frequencies your data exhibits. This is usually as easy as
    24 hours, 1 week, and 1 year, but sometimes the frequencies must be
-   found by DPK with the FFT or by solving a global optimization
-   problem.
+   found by DPK by solving a global optimization problem or via the FFT.
 3. Choose a model object from `model_obs.py` or write your own. We
    recommend starting out with `SkewNLLwithTime`, which assumes your
    data is drawn from a time-varying skew-normal distribution at every
