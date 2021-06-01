@@ -349,8 +349,8 @@ class KoopmanProb(nn.Module):
 
         return np.mean(losses)
 
-    def fit(self, xt, tt=None, iterations=10, interval=5, cutoff=np.inf, weight_decay=0, verbose=False, lr_theta=1e-5,
-            lr_omega=1e-5, training_mask=None):
+    def fit(self, xt, tt=None, iterations=20, interval=10, cutoff=0, weight_decay=0, verbose=False, lr_theta=1e-4,
+            lr_omega=0, training_mask=None):
         '''
         Given a dataset, this function alternatingly optimizes omega and
         parameters of f. Specifically, the algorithm performs interval many

@@ -139,7 +139,7 @@ class GEFComSkewNLL(ModelObject):
 
 
 class SkewNLLwithTime(ModelObject):
-    def __init__(self, x_dim, num_freqs, n):
+    def __init__(self, x_dim, num_freqs, n=256):
         """
         neural network that takes a vector of sines and cosines and produces a skew-normal distribution with parameters
         mu, sigma, and alpha (the outputs of the NN). trains using NLL. Takes time as an input along with the vector of
