@@ -24,6 +24,7 @@ supplementary/*
 figures/*
 research/*
 experiments/*
+*.zip
 
 # pycharm files
 .idea/*

@@ -1,3 +1,10 @@
+# core requirements
 torch>=1.7.0+cpu
 scipy>=1.5.4
 numpy>=1.19.1
+
+# additional
+pandas>=1.2.0
+matplotlib>=3.3.1
+sklearn>=0.0
+jupyter>=1.0.0

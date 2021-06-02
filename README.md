@@ -10,7 +10,7 @@ The following are dependencies of the DPK framework:
 - numpy
 - scipy
 
-While these are used in the experiments for the paper:
+While these are used for the experiments in the paper:
 - pandas
 - sklearn
 - matplotlib
@@ -25,9 +25,6 @@ All results can be found in `figures.ipynb` with instructions on how to
 replicate them. Our model outperforms all 177 competing teams in Global
 Energy Forecasting Competition 2017 at the qualifying task.
 
-![Depiction of periodic uncertainty](./experiments/periodicUncertainty.png
-"uncertainty")
-
 ## Training a DPK model
 1. Load your time-series data into memory as a time-by-n numpy array.  
    (If the samples are not uniform over time, you will also need to
@@ -41,6 +38,7 @@ Energy Forecasting Competition 2017 at the qualifying task.
    point in time. "withTime" indicates that this model object allows for
    non-periodic trends.
 4. Call fit!
+
 ```
 x = np.sin(np.linspace(0, 1000 * np.pi, 10000)).reshape(-1, 1)  # for example
 periods = [20,]  # 20 idxs is a period

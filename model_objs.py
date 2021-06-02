@@ -1,7 +1,15 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+@authors: Alex Mallen (atmallen@uw.edu)
+Built on code from Henning Lange (helange@uw.edu)
+"""
+
 import torch
 from torch import nn
 import numpy as np
 from scipy.special import factorial
+
 
 class ModelObject(nn.Module):
 
@@ -202,7 +210,7 @@ class SkewNLLwithTime(ModelObject):
     def _norm_logcdf(self, z):
 
         if (z < -7).any():  # these result in NaNs otherwise
-            print("THIS BATCH USING LOG CDF APPROXIMATION (large z-score can otherwise cause numerical instability)")
+            # print("THIS BATCH USING LOG CDF APPROXIMATION (large z-score can otherwise cause numerical instability)")
             # https://stats.stackexchange.com/questions/106003/approximation-of-logarithm-of-standard-normal-cdf-for-x0/107548#107548?newreg=5e5f6365aa7046aba1c447e8ae263fec
             # I found this approx to be good: less than 0.04 error for all -20 < x < -5
             # approx = lambda x: -0.5 * x ** 2 - 4.8 + 2509 * (x - 13) / ((x - 40) ** 2 * (x - 5))
@@ -523,6 +531,3 @@ class PoissonNLL(ModelObject):
 
     def std(self, params):
         return np.sqrt(params[0])
-
-
-

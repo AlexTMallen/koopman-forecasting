@@ -1,5 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
+"""
+@author: Alex Mallen (atmallen@uw.edu)
+"""
 
 import json
 import numpy as np
