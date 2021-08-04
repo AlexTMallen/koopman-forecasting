@@ -4,6 +4,9 @@ measures.** Our Koopman-theoretic approach enables powerful forecasts of
 a variety of quasi-periodic phenomena from  electricity demand to neural
 activity.
 
+**For a more user-friendly DPK framework, see this
+[repository](https://github.com/AlexTMallen/dpk).**
+
 ## Dependencies
 The following are dependencies of the DPK framework:
 - torch
