@@ -19,6 +19,7 @@ supplementary/*
 # images and media
 *.png
 *.jpg
+*.svg
 *.pdf
 *.pptx
 *.mp4
