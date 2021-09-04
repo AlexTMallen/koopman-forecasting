@@ -25,8 +25,8 @@ All of these are available through `pip`.
 
 ## Results
 All results can be found in `figures.ipynb` with instructions on how to
-replicate them. Our model outperforms all 177 competing teams in Global
-Energy Forecasting Competition 2017 at the qualifying task.
+replicate them. In a retrospective comparison, our model outperforms all 177 competing teams in Global
+Energy Forecasting Competition 2017 at the qualifying task. We also show significant improvements over a NASA air quality forecast model.
 
 ## Training a DPK model
 1. Load your time-series data into memory as a time-by-n numpy array.  
