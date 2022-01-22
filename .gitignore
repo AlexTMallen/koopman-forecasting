@@ -15,6 +15,9 @@ atmo_chem/*
 duffing/*
 flu/*
 supplementary/*
+IJF/*
+AAAI-supplementary/*
+.darts/*
 
 # images and media
 *.png
